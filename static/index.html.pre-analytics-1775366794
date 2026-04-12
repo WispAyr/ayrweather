@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0b1220" />
+<title>AyrWeather · Live Ayrshire Weather</title>
+<meta name="description" content="Modern Ayrshire weather dashboard: forecasts, marine, rivers, prism intelligence, storm tracker." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>" />
+
+<!-- WispAyr Design System (retained for w-card, w-text-muted, tokens) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/WispAyr/wispayr-design@main/css/wispayr.css" />
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Three.js for ocean hero -->
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+}}
+</script>
+
+<style>
+/* ──────────────────────────────────────────────────────────
+   AyrWeather · Redesign 2026
+   A modern, airy Ayrshire weather dashboard.
+   Dark-first, responsive, chromeless.
+   ────────────────────────────────────────────────────────── */
+
+:root {
+  /* Mood palette — replaced dynamically based on weather code */
+  --mood-1: #0b1220;
+  --mood-2: #13203a;
+  --mood-3: #1c2f55;
+  --accent: #6ea8ff;
+  --accent-soft: rgba(110,168,255,0.15);
+
+  /* Neutrals (dark) */
+  --bg: #07101e;
+  --surface: rgba(255,255,255,0.04);
+  --surface-2: rgba(255,255,255,0.07);
+  --surface-hi: rgba(255,255,255,0.10);
+  --line: rgba(255,255,255,0.08);
+  --line-2: rgba(255,255,255,0.14);
+  --text: #eaf1fb;
+  --text-dim: rgba(234,241,251,0.68);
+  --text-mute: rgba(234,241,251,0.45);
+
+  /* Semantic */
+  --good: #32d296;
+  --warn: #ffb545;
+  --bad:  #ff6b6b;
+  --info: #6ea8ff;
+  --storm: #b48bff;
+
+  /* Radius & motion */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 18px;
+  --r-lg: 26px;
+  --r-xl: 34px;
+  --ease: cubic-bezier(.4,0,.2,1);
+  --t-fast: 180ms;
+  --t-med: 360ms;
+  --t-slow: 700ms;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f7fc;
+  --surface: rgba(12,28,58,0.04);
+  --surface-2: rgba(12,28,58,0.07);
+  --surface-hi: rgba(12,28,58,0.10);
+  --line: rgba(12,28,58,0.08);
+  --line-2: rgba(12,28,58,0.16);
+  --text: #0b1f3a;
+  --text-dim: rgba(11,31,58,0.72);
+  --text-mute: rgba(11,31,58,0.50);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
+  transition: background var(--t-slow) var(--ease), color var(--t-med) var(--ease);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--mood-3) 0%, transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, var(--mood-2) 0%, transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Layout ── */
+.shell { max-width: 1240px; margin: 0 auto; padding: 20px 24px 96px; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: 0.02em; }
+.brand-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 18px var(--accent);
+  animation: pulse 2.4s var(--ease) infinite;
+}
+@keyframes pulse {
+  0%,100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.6; }
+}
+.brand small { color: var(--text-mute); font-weight: 500; margin-left: 6px; font-size: 12px; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+}
+.chip:hover { background: var(--surface-2); color: var(--text); }
+.chip.icon { padding: 6px 10px; }
+
+/* ── Location selector ── */
+.locbar {
+  display: flex; gap: 6px; overflow-x: auto;
+  padding: 4px 0 12px; margin-bottom: 14px;
+  scrollbar-width: none;
+}
+.locbar::-webkit-scrollbar { display: none; }
+.loc-pill {
+  flex: 0 0 auto;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  padding: 8px 16px; border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+  white-space: nowrap;
+}
+.loc-pill:hover { border-color: var(--line-2); color: var(--text); }
+.loc-pill.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+  font-weight: 600;
+}
+
+/* ── Hero ── */
+.hero {
+  position: relative;
+  border-radius: var(--r-xl);
+  padding: 40px 36px 32px;
+  margin-bottom: 28px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%),
+    linear-gradient(135deg, var(--mood-2) 0%, var(--mood-1) 100%);
+  border: 1px solid var(--line);
+  isolation: isolate;
+  min-height: 340px;
+}
+.hero-canvas { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.9; }
+.hero-canvas canvas { width: 100% !important; height: 100% !important; display: block; }
+.hero::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(circle at 70% 20%, transparent 0%, rgba(7,16,30,0.55) 100%);
+  z-index: 1; pointer-events: none;
+}
+.hero-content { position: relative; z-index: 2; }
+
+.hero-head {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  font-size: 12px; color: var(--text-dim); font-weight: 500;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hero-head .live {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.hero-head .live::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 10px var(--good);
+  animation: pulse 2s var(--ease) infinite;
+}
+
+.hero-city {
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin: 18px 0 4px;
+  line-height: 1;
+}
+.hero-desc {
+  font-size: 17px; color: var(--text-dim); font-weight: 500;
+  margin-bottom: 24px;
+}
+.hero-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 32px; flex-wrap: wrap;
+}
+.hero-temp {
+  font-size: clamp(96px, 14vw, 164px);
+  font-weight: 200;
+  letter-spacing: -0.04em;
+  line-height: 0.85;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, var(--text) 0%, rgba(234,241,251,0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.hero-temp .unit { font-size: 0.3em; font-weight: 400; color: var(--text-dim); margin-top: 0.2em; }
+.hero-temp .icon { font-size: 0.5em; margin-left: 8px; line-height: 1; filter: drop-shadow(0 4px 16px rgba(0,0,0,0.3)); }
+
+.hero-summary {
+  flex: 1 1 260px; max-width: 420px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.hero-stat {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+}
+.hero-stat-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-mute); font-weight: 600;
+}
+.hero-stat-value {
+  font-size: 22px; font-weight: 600; margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.hero-stat-value small { font-size: 12px; font-weight: 400; color: var(--text-dim); margin-left: 3px; }
+.hero-stat-sub { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+
+.hero-footer {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin-top: 26px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--text-dim);
+}
+.hero-footer .dot { opacity: 0.4; margin: 0 2px; }
+.hero-footer strong { color: var(--text); font-weight: 600; }
+
+/* ── Warning strip ── */
+.warn-strip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: linear-gradient(90deg, rgba(255,107,107,0.18), rgba(180,139,255,0.18));
+  border: 1px solid rgba(255,107,107,0.32);
+  margin-bottom: 20px;
+  font-size: 13.5px; color: var(--text);
+  font-weight: 500;
+}
+.warn-strip .pill { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── Section primitives ── */
+.section { margin-bottom: 26px; }
+.section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-bottom: 14px;
+}
+.section-title {
+  font-size: 13px; font-weight: 700;
+  color: var(--text); letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.section-sub { font-size: 12px; color: var(--text-mute); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 22px;
+  transition: all var(--t-fast) var(--ease);
+}
+.card.interactive { cursor: pointer; }
+.card.interactive:hover { background: var(--surface-2); border-color: var(--line-2); transform: translateY(-1px); }
+
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 860px) { .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+/* ── Hourly strip ── */
+.hourly {
+  display: flex; gap: 8px; overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 4px 2px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.hourly::-webkit-scrollbar { height: 6px; }
+.hourly::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+.hour-cell {
+  flex: 0 0 auto; scroll-snap-align: start;
+  width: 72px; padding: 14px 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid transparent;
+  text-align: center;
+  transition: all var(--t-fast) var(--ease);
+}
+.hour-cell.now {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.hour-cell:hover { background: var(--surface-2); }
+.hour-time { font-size: 11px; color: var(--text-mute); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.hour-icon { font-size: 24px; margin: 8px 0 4px; }
+.hour-temp { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hour-precip { font-size: 10.5px; color: var(--info); margin-top: 6px; font-weight: 600; height: 14px; }
+.hour-precip-bar { height: 3px; border-radius: 2px; background: var(--line); margin-top: 4px; position: relative; overflow: hidden; }
+.hour-precip-bar span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--info); border-radius: 2px; }
+
+/* ── Daily forecast ── */
+.daily-list { display: flex; flex-direction: column; gap: 2px; }
+.day-row {
+  display: grid;
+  grid-template-columns: 92px 40px 1fr auto;
+  gap: 16px; align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.day-row:last-child { border-bottom: none; }
+.day-name { font-weight: 600; font-size: 14px; }
+.day-name small { display: block; font-size: 11px; color: var(--text-mute); font-weight: 500; margin-top: 1px; }
+.day-icon { font-size: 22px; text-align: center; }
+.day-bar {
+  position: relative; height: 6px;
+  background: linear-gradient(90deg, rgba(110,168,255,0.2), rgba(255,181,69,0.3));
+  border-radius: 3px;
+}
+.day-bar::before, .day-bar::after {
+  content: ""; position: absolute; top: -3px; width: 12px; height: 12px;
+  border-radius: 50%; border: 2px solid var(--bg);
+}
+.day-bar::before { background: var(--info); left: var(--low, 0%); transform: translateX(-50%); }
+.day-bar::after { background: var(--warn); right: calc(100% - var(--high, 100%)); transform: translateX(50%); }
+.day-temps {
+  font-variant-numeric: tabular-nums; font-weight: 600;
+  display: flex; gap: 10px; min-width: 80px; justify-content: flex-end;
+}
+.day-temps .hi { color: var(--text); }
+.day-temps .lo { color: var(--text-mute); }
+
+/* ── Marine / sea card ── */
+.marine-gauges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 10px; }
+.gauge {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 16px; border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.gauge-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-mute); font-weight: 600; }
+.gauge-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.gauge-value small { font-size: 12px; font-weight: 400; color: var(--text-dim); margin-left: 2px; }
+.gauge-sub { font-size: 11px; color: var(--text-mute); }
+@media (max-width: 640px) { .marine-gauges { grid-template-columns: 1fr 1fr; } }
+
+/* ── Prism intelligence cards ── */
+.prism-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.prism-card {
+  position: relative;
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease);
+  overflow: hidden;
+}
+.prism-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--accent);
+}
+.prism-card:hover { background: var(--surface-2); border-color: var(--line-2); transform: translateY(-1px); }
+.prism-card.mood-warn::before { background: var(--warn); }
+.prism-card.mood-bad::before { background: var(--bad); }
+.prism-card.mood-good::before { background: var(--good); }
+.prism-card.mood-storm::before { background: var(--storm); }
+.prism-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-mute); font-weight: 600; }
+.prism-value { font-size: 20px; font-weight: 700; margin-top: 6px; }
+.prism-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.prism-meta { font-size: 11px; color: var(--text-mute); margin-top: 6px; }
+
+/* ── Storm log ── */
+.storm-banner {
+  padding: 20px 24px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, rgba(180,139,255,0.20), rgba(110,168,255,0.12));
+  border: 1px solid rgba(180,139,255,0.35);
+  display: grid; grid-template-columns: 1fr auto; gap: 20px;
+  align-items: center;
+}
+.storm-banner.severe { background: linear-gradient(135deg, rgba(255,107,107,0.22), rgba(180,139,255,0.15)); border-color: rgba(255,107,107,0.38); }
+.storm-banner .head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-mute); font-weight: 700; margin-bottom: 6px; display:flex; align-items:center; gap:8px; }
+.storm-banner .headline { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.storm-banner .meta { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.storm-banner .metrics { display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+.storm-metric { text-align: right; }
+.storm-metric-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-mute); font-weight: 600; }
+.storm-metric-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .storm-banner { grid-template-columns: 1fr; } .storm-banner .metrics { justify-content: flex-start; } .storm-metric { text-align: left; } }
+
+.storm-totals {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
+  border-radius: var(--r-md); overflow: hidden; background: var(--line);
+}
+.storm-total { background: var(--surface); padding: 14px; }
+.storm-total-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-mute); font-weight: 600; }
+.storm-total-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+@media (max-width: 720px) { .storm-totals { grid-template-columns: repeat(2, 1fr); } }
+
+.storm-episode {
+  padding: 14px 16px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+  cursor: pointer; transition: all var(--t-fast) var(--ease);
+}
+.storm-episode:hover { background: var(--surface-2); }
+.storm-episode .ep-time { font-size: 11px; color: var(--text-mute); font-weight: 600; letter-spacing: 0.02em; }
+.storm-episode .ep-head { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.storm-episode .sev {
+  display: inline-flex; padding: 3px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--surface-hi); color: var(--text-dim);
+}
+.storm-episode .sev.severe { background: rgba(255,107,107,0.22); color: #ffb5b5; }
+.storm-episode .sev.strong { background: rgba(255,181,69,0.22); color: #ffcf8a; }
+.storm-episode .sev.moderate { background: rgba(110,168,255,0.22); color: #a5c5ff; }
+.storm-episode .sev.brief { background: rgba(180,139,255,0.22); color: #d0b8ff; }
+
+/* ── River table ── */
+.rivers { display: flex; flex-direction: column; gap: 1px; }
+.river-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center;
+  padding: 12px 4px; border-bottom: 1px solid var(--line);
+}
+.river-row:last-child { border-bottom: none; }
+.river-name { font-weight: 500; font-size: 13.5px; }
+.river-name small { display: block; color: var(--text-mute); font-size: 11px; margin-top: 1px; }
+.river-level { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
+.river-level small { font-size: 11px; font-weight: 400; color: var(--text-dim); margin-left: 2px; }
+.river-trend { font-size: 16px; width: 24px; text-align: center; }
+
+/* ── Radar map ── */
+.radar-wrap {
+  border-radius: var(--r-lg); overflow: hidden; position: relative;
+  height: 420px; border: 1px solid var(--line);
+}
+.radar-wrap #radar-map { width: 100%; height: 100%; background: #061120; }
+.radar-controls {
+  position: absolute; left: 16px; bottom: 16px; right: 16px; z-index: 400;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: rgba(6,17,32,0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: 12px;
+}
+.radar-controls button { background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 14px; padding: 4px 8px; }
+.radar-time { flex: 1; font-variant-numeric: tabular-nums; font-weight: 600; }
+.radar-slider { flex: 2; }
+
+/* ── Sky / extras ── */
+.sky-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+@media (max-width: 520px) { .sky-grid { grid-template-columns: 1fr; } }
+.sky-block {
+  padding: 16px; border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.sky-block h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-mute); font-weight: 700; }
+.sky-big { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sky-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* ── Drawer (detail panel) ── */
+.drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  opacity: 0; pointer-events: none; transition: opacity var(--t-med) var(--ease);
+  z-index: 900; backdrop-filter: blur(4px);
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+.drawer {
+  position: fixed; right: 0; top: 0; bottom: 0; width: min(460px, 100%);
+  background: var(--bg); border-left: 1px solid var(--line);
+  transform: translateX(100%); transition: transform var(--t-med) var(--ease);
+  z-index: 1000; overflow-y: auto; padding: 28px 28px 60px;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-close {
+  position: sticky; top: 0; float: right;
+  background: var(--surface); border: 1px solid var(--line);
+  width: 32px; height: 32px; border-radius: 50%;
+  color: var(--text); cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Empty / error ── */
+.muted { color: var(--text-mute); font-size: 13px; }
+.empty { padding: 20px; text-align: center; color: var(--text-mute); font-size: 13px; }
+.skel {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Hero fade transition on loc change ── */
+.fade-in { animation: fadeIn var(--t-med) var(--ease); }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Light-mode canvas dim */
+html[data-theme="light"] .hero { background: linear-gradient(135deg, #d7e3f8 0%, #eef2fa 100%); border-color: rgba(12,28,58,0.12); }
+html[data-theme="light"] .hero::after { background: radial-gradient(circle at 70% 20%, transparent 0%, rgba(244,247,252,0.35) 100%); }
+html[data-theme="light"] .hero-temp { background: linear-gradient(180deg, #0b1f3a 0%, rgba(11,31,58,0.55) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* print */
+@media print { .topbar, .locbar, .chip { display: none; } .hero-canvas { display: none; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      AyrWeather <small>Ayrshire live</small>
+    </div>
+    <div class="topbar-right">
+      <button class="chip" id="refresh-chip" title="Last updated">—</button>
+      <button class="chip icon" id="theme-toggle" title="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <!-- Location selector -->
+  <nav class="locbar" id="locbar" aria-label="Location"></nav>
+
+  <!-- Warnings -->
+  <div id="warnings"></div>
+
+  <!-- Hero -->
+  <section class="hero" id="hero">
+    <div class="hero-canvas" id="hero-canvas"></div>
+    <div class="hero-content" id="hero-content">
+      <div class="hero-head">
+        <span>📍 Ayrshire, Scotland</span>
+        <span class="live">Live</span>
+      </div>
+      <div class="skel" style="height:56px;width:220px;margin-top:18px"></div>
+      <div class="skel" style="height:130px;width:260px;margin-top:24px"></div>
+    </div>
+  </section>
+
+  <!-- Storm Tracker -->
+  <section class="section" id="storm-section">
+    <div class="section-head">
+      <div class="section-title">Storm Log</div>
+      <div class="section-sub" id="storm-sub">14-day window</div>
+    </div>
+    <div id="storm-active"></div>
+    <div class="storm-totals" id="storm-totals"></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px" id="storm-episodes"></div>
+  </section>
+
+  <!-- Hourly -->
+  <section class="section">
+    <div class="section-head">
+      <div class="section-title">48-Hour Forecast</div>
+      <div class="section-sub">Hourly outlook</div>
+    </div>
+    <div class="hourly" id="hourly"></div>
+  </section>
+
+  <!-- Daily + Marine -->
+  <div class="grid grid-2 section">
+    <div class="card">
+      <div class="section-head" style="margin-bottom:10px">
+        <div class="section-title">7-Day Forecast</div>
+      </div>
+      <div class="daily-list" id="daily"></div>
+    </div>
+    <div class="card">
+      <div class="section-head" style="margin-bottom:10px">
+        <div class="section-title">Firth of Clyde</div>
+        <div class="section-sub">Marine</div>
+      </div>
+      <div class="marine-gauges" id="marine"></div>
+      <div style="margin-top:14px" id="air-quality"></div>
+    </div>
+  </div>
+
+  <!-- Prism Intelligence -->
+  <section class="section">
+    <div class="section-head">
+      <div class="section-title">Prism Intelligence</div>
+      <div class="section-sub">Derived insights · local sensors</div>
+    </div>
+    <div id="prism-atmosphere" style="margin-bottom:16px"></div>
+    <div id="prism-maritime" style="margin-bottom:16px"></div>
+    <div id="prism-rivers"></div>
+  </section>
+
+  <!-- Radar -->
+  <section class="section">
+    <div class="section-head">
+      <div class="section-title">Live Rainfall Radar</div>
+      <div class="section-sub">RainViewer · 2h animation</div>
+    </div>
+    <div class="radar-wrap">
+      <div id="radar-map"></div>
+      <div class="radar-controls">
+        <button id="radar-play">⏸</button>
+        <input class="radar-slider" type="range" id="radar-slider" min="0" max="0" value="0" />
+        <span class="radar-time" id="radar-time">—</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Rivers + Sky -->
+  <div class="grid grid-2 section">
+    <div class="card">
+      <div class="section-head" style="margin-bottom:10px">
+        <div class="section-title">Ayrshire Rivers</div>
+        <div class="section-sub">SEPA live</div>
+      </div>
+      <div class="rivers" id="rivers"></div>
+    </div>
+    <div class="card">
+      <div class="section-head" style="margin-bottom:10px">
+        <div class="section-title">Sky Watch</div>
+        <div class="section-sub">Moon · Aurora · UV · ISS</div>
+      </div>
+      <div class="sky-grid" id="sky"></div>
+    </div>
+  </div>
+
+  <!-- Extras -->
+  <div class="grid grid-4 section" id="extras"></div>
+
+  <footer style="text-align:center;color:var(--text-mute);font-size:11px;padding:40px 0 10px;">
+    AyrWeather · Data: Open-Meteo, Met Office, SEPA, Prism, Siphon · Built for Ayrshire
+  </footer>
+</div>
+
+<!-- Drawer -->
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-close" id="drawer-close">×</button>
+  <div id="drawer-body"></div>
+</div>
+
+<script type="module">
+// ── Location registry ──
+const LOCATIONS = ['ayr','troon','prestwick','kilmarnock','irvine','largs','maybole','girvan','cumnock'];
+const LOC_NAMES = {ayr:'Ayr',troon:'Troon',prestwick:'Prestwick',kilmarnock:'Kilmarnock',irvine:'Irvine',largs:'Largs',maybole:'Maybole',girvan:'Girvan',cumnock:'Cumnock'};
+let currentLoc = 'ayr';
+
+// ── WMO codes ──
+const WMO_ICONS = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌧️',56:'🌨️',57:'🌨️',61:'🌧️',63:'🌧️',65:'🌧️',66:'🌨️',67:'🌨️',71:'❄️',73:'❄️',75:'❄️',77:'🌨️',80:'🌦️',81:'🌧️',82:'⛈️',85:'🌨️',86:'🌨️',95:'⛈️',96:'⛈️',99:'⛈️'};
+const WMO_DESC = {0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Icy fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',56:'Freezing drizzle',57:'Heavy freezing drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Heavy freezing rain',71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',80:'Light showers',81:'Showers',82:'Violent showers',85:'Snow showers',86:'Heavy snow showers',95:'Thunderstorm',96:'Thunderstorm w/ hail',99:'Heavy thunderstorm w/ hail'};
+const WIND_DIRS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+
+// ── Mood palette by weather code ──
+const MOODS = {
+  clear:  { m1:'#0b1220', m2:'#1b3a6e', m3:'#2c5aa8', a:'#ffb545' },  // sun-kissed
+  cloud:  { m1:'#0b1220', m2:'#1f2d45', m3:'#334864', a:'#6ea8ff' },  // slate
+  rain:   { m1:'#081422', m2:'#173047', m3:'#204e6f', a:'#6ea8ff' },  // deep blue
+  snow:   { m1:'#0e1826', m2:'#2a3e5c', m3:'#4a6a96', a:'#d4e3ff' },  // icy
+  fog:    { m1:'#111a28', m2:'#2a3545', m3:'#475568', a:'#9bb4d4' },  // grey
+  storm:  { m1:'#0a0d1a', m2:'#2a1b48', m3:'#4a2b78', a:'#b48bff' },  // dramatic
+};
+function moodFor(code) {
+  if (code == null) return MOODS.cloud;
+  if ([95,96,99].includes(code)) return MOODS.storm;
+  if (code === 0 || code === 1) return MOODS.clear;
+  if ([45,48].includes(code)) return MOODS.fog;
+  if (code >= 71 && code <= 86 && code !== 80 && code !== 81 && code !== 82) return MOODS.snow;
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return MOODS.rain;
+  return MOODS.cloud;
+}
+function applyMood(code) {
+  const m = moodFor(code);
+  const r = document.documentElement.style;
+  r.setProperty('--mood-1', m.m1);
+  r.setProperty('--mood-2', m.m2);
+  r.setProperty('--mood-3', m.m3);
+  r.setProperty('--accent', m.a);
+  r.setProperty('--accent-soft', m.a + '26');
+}
+
+// ── Helpers ──
+const fmt = (v,d=1) => v != null ? Number(v).toFixed(d) : '–';
+const wmoIcon = c => WMO_ICONS[c] ?? '🌡️';
+const wmoDesc = c => WMO_DESC[c] ?? 'Unknown';
+const windDir = d => d==null ? '–' : WIND_DIRS[Math.round(d/22.5) % 16];
+const fmtTime = iso => new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'});
+const fmtHour = iso => { const h = new Date(iso).getHours(); return h===0?'12a':h<12?`${h}a`:h===12?'12p':`${h-12}p`; };
+const dayName = ds => ds === new Date().toISOString().split('T')[0] ? 'Today' : new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long'});
+const dateFmt = ds => new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+const kphToMph = k => k==null ? null : k * 0.621371;
+
+// ── Render location bar ──
+function renderLocbar() {
+  const bar = document.getElementById('locbar');
+  bar.innerHTML = LOCATIONS.map(k => `<button class="loc-pill${k===currentLoc?' active':''}" data-loc="${k}">${LOC_NAMES[k]}</button>`).join('');
+  bar.querySelectorAll('.loc-pill').forEach(b => b.addEventListener('click', () => {
+    currentLoc = b.dataset.loc;
+    bar.querySelectorAll('.loc-pill').forEach(p => p.classList.toggle('active', p.dataset.loc===currentLoc));
+    loadAll();
+  }));
+}
+
+// ── Hero ──
+function renderHero(loc, cur, daily) {
+  const code = cur.weather_code;
+  applyMood(code);
+  const sunrise = daily?.sunrise?.[0];
+  const sunset = daily?.sunset?.[0];
+  const tMax = daily?.temperature_2m_max?.[0];
+  const tMin = daily?.temperature_2m_min?.[0];
+  const el = document.getElementById('hero-content');
+  el.classList.remove('fade-in'); void el.offsetWidth; el.classList.add('fade-in');
+  el.innerHTML = `
+    <div class="hero-head">
+      <span>📍 Ayrshire, Scotland · ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>
+      <span class="live">Live</span>
+    </div>
+    <h1 class="hero-city">${loc.name}</h1>
+    <div class="hero-desc">${wmoDesc(code)}</div>
+    <div class="hero-row">
+      <div class="hero-temp">
+        ${fmt(cur.temperature_2m,0)}<span class="unit">°</span>
+        <span class="icon">${wmoIcon(code)}</span>
+      </div>
+      <div class="hero-summary">
+        <div class="hero-stat">
+          <div class="hero-stat-label">Wind</div>
+          <div class="hero-stat-value">${fmt(cur.wind_speed_10m,0)}<small>mph</small></div>
+          <div class="hero-stat-sub">${windDir(cur.wind_direction_10m)} · G ${fmt(cur.wind_gusts_10m,0)}</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Feels</div>
+          <div class="hero-stat-value">${fmt(cur.apparent_temperature,0)}<small>°C</small></div>
+          <div class="hero-stat-sub">H ${fmt(tMax,0)}° / L ${fmt(tMin,0)}°</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Humidity</div>
+          <div class="hero-stat-value">${fmt(cur.relative_humidity_2m,0)}<small>%</small></div>
+          <div class="hero-stat-sub">Dew approx.</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Pressure</div>
+          <div class="hero-stat-value">${fmt(cur.surface_pressure,0)}<small>hPa</small></div>
+          <div class="hero-stat-sub">Visibility ${cur.visibility?fmt(cur.visibility/1000,1):'–'}km</div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-footer">
+      ${sunrise ? `<span>🌅 <strong>${fmtTime(sunrise)}</strong></span><span class="dot">·</span>` : ''}
+      ${sunset ? `<span>🌇 <strong>${fmtTime(sunset)}</strong></span><span class="dot">·</span>` : ''}
+      <span>Cloud <strong>${fmt(cur.cloud_cover,0)}%</strong></span>
+      <span class="dot">·</span>
+      <span>Precip <strong>${fmt(cur.precipitation,1)}mm</strong></span>
+    </div>
+  `;
+  // refresh chip
+  document.getElementById('refresh-chip').textContent = `Updated ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+  // trigger ocean viz
+  initOcean(code, cur);
+}
+
+// ── Hourly ──
+function renderHourly(hourly) {
+  const target = document.getElementById('hourly');
+  if (!hourly?.time?.length) { target.innerHTML = '<div class="empty">No hourly data</div>'; return; }
+  const now = Date.now();
+  const maxPrecip = Math.max(...(hourly.precipitation_probability||[0]), 1);
+  target.innerHTML = hourly.time.slice(0,48).map((t,i) => {
+    const dt = new Date(t);
+    const isNow = Math.abs(dt - now) < 1800000;
+    const precip = hourly.precipitation_probability?.[i] ?? 0;
+    return `
+    <div class="hour-cell${isNow?' now':''}">
+      <div class="hour-time">${isNow?'Now':fmtHour(t)}</div>
+      <div class="hour-icon">${wmoIcon(hourly.weather_code?.[i])}</div>
+      <div class="hour-temp">${fmt(hourly.temperature_2m?.[i],0)}°</div>
+      <div class="hour-precip">${precip>5?precip+'%':''}</div>
+      <div class="hour-precip-bar"><span style="width:${precip}%"></span></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Daily ──
+function renderDaily(daily) {
+  const target = document.getElementById('daily');
+  if (!daily?.time?.length) { target.innerHTML = '<div class="empty">No daily data</div>'; return; }
+  const allTemps = [...(daily.temperature_2m_min||[]), ...(daily.temperature_2m_max||[])].filter(v => v != null);
+  const tmin = Math.min(...allTemps, 0);
+  const tmax = Math.max(...allTemps, 1);
+  const range = tmax - tmin || 1;
+  target.innerHTML = daily.time.map((t,i) => {
+    const lo = daily.temperature_2m_min?.[i];
+    const hi = daily.temperature_2m_max?.[i];
+    const loPct = ((lo - tmin) / range) * 100;
+    const hiPct = ((hi - tmin) / range) * 100;
+    return `
+    <div class="day-row">
+      <div class="day-name">${dayName(t)}<small>${dateFmt(t)}</small></div>
+      <div class="day-icon">${wmoIcon(daily.weather_code?.[i])}</div>
+      <div class="day-bar" style="--low:${loPct}%;--high:${hiPct}%"></div>
+      <div class="day-temps"><span class="hi">${fmt(hi,0)}°</span><span class="lo">${fmt(lo,0)}°</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Marine ──
+function renderMarine(marine) {
+  const cur = marine?.current ?? {};
+  const target = document.getElementById('marine');
+  target.innerHTML = `
+    <div class="gauge">
+      <div class="gauge-label">Wave Height</div>
+      <div class="gauge-value">${fmt(cur.wave_height)}<small>m</small></div>
+      <div class="gauge-sub">Sig wave</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">Period</div>
+      <div class="gauge-value">${fmt(cur.wave_period)}<small>s</small></div>
+      <div class="gauge-sub">Between crests</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">Sea Temp</div>
+      <div class="gauge-value">${fmt(cur.sea_surface_temperature)}<small>°C</small></div>
+      <div class="gauge-sub">Surface</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">Wind Wave</div>
+      <div class="gauge-value">${fmt(cur.wind_wave_height)}<small>m</small></div>
+      <div class="gauge-sub">Local chop</div>
+    </div>`;
+}
+
+function renderAQI(aq) {
+  const cur = aq?.current ?? {};
+  const aqi = cur.european_aqi;
+  if (aqi == null) { document.getElementById('air-quality').innerHTML = ''; return; }
+  let label = 'Good', color = 'var(--good)';
+  if (aqi > 80) { label='Very Poor'; color='var(--bad)'; }
+  else if (aqi > 60) { label='Poor'; color='var(--bad)'; }
+  else if (aqi > 40) { label='Moderate'; color='var(--warn)'; }
+  else if (aqi > 20) { label='Fair'; color='var(--good)'; }
+  document.getElementById('air-quality').innerHTML = `
+    <div style="padding-top:14px;border-top:1px solid var(--line);display:flex;gap:16px;align-items:center">
+      <div>
+        <div class="gauge-label">Air Quality</div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
+          <div style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:${color}">${fmt(aqi,0)}</div>
+          <div style="font-size:13px;font-weight:600;color:${color}">${label}</div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;gap:12px;justify-content:flex-end">
+        <div><div class="gauge-label">PM2.5</div><div style="font-weight:600">${fmt(cur.pm2_5)}</div></div>
+        <div><div class="gauge-label">PM10</div><div style="font-weight:600">${fmt(cur.pm10)}</div></div>
+        <div><div class="gauge-label">O₃</div><div style="font-weight:600">${fmt(cur.ozone)}</div></div>
+      </div>
+    </div>`;
+}
+
+// ── Weather fetch ──
+async function loadWeather() {
+  try {
+    const res = await fetch(`/api/weather/${currentLoc}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderHero(data.location, data.forecast?.current ?? {}, data.forecast?.daily ?? {});
+    renderHourly(data.forecast?.hourly);
+    renderDaily(data.forecast?.daily);
+    renderMarine(data.marine);
+    renderAQI(data.air_quality);
+  } catch(e) {
+    document.getElementById('hero-content').innerHTML = `<div style="padding:20px;color:var(--bad)">⚠ Weather failed: ${e.message}</div>`;
+  }
+}
+
+// ── Warnings ──
+async function loadWarnings() {
+  try {
+    const res = await fetch('/api/warnings');
+    const data = await res.json();
+    const warns = data?.data?.warnings ?? data?.warnings ?? [];
+    const el = document.getElementById('warnings');
+    if (!warns.length) { el.innerHTML = ''; return; }
+    const severest = warns[0];
+    const sev = severest.level || severest.severity || 'yellow';
+    el.innerHTML = `
+      <div class="warn-strip">
+        <span class="pill" style="background:${sev==='red'?'rgba(255,107,107,0.4)':sev==='amber'?'rgba(255,181,69,0.35)':'rgba(234,179,8,0.35)'}">${sev}</span>
+        <span><strong>${severest.headline || severest.title || 'Weather warning'}</strong>${warns.length>1 ? ` · +${warns.length-1} more` : ''}</span>
+      </div>`;
+  } catch(e) { /* silent */ }
+}
+
+// ── Storm Tracker ──
+function sevClass(s) { return ['severe','strong','moderate','brief'].includes(s) ? s : 'brief'; }
+function renderStormTracker(data) {
+  const active = data?.active_storm;
+  const totals = data?.totals_14d || {};
+  const episodes = data?.recent_episodes || [];
+
+  const activeEl = document.getElementById('storm-active');
+  if (active && active.active) {
+    const cls = active.severity === 'severe' ? 'severe' : '';
+    activeEl.innerHTML = `
+      <div class="storm-banner ${cls}" onclick="window.openStormDetail(${JSON.stringify(active).replace(/"/g,'&quot;')})">
+        <div>
+          <div class="head">⛈️ Active Storm · ${active.severity}</div>
+          <div class="headline">${active.headline || 'Storm in progress'}</div>
+          <div class="meta">Since ${new Date(active.start_at).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})} · ${active.duration_h?.toFixed(1) || '0.0'}h elapsed</div>
+        </div>
+        <div class="metrics">
+          <div class="storm-metric"><div class="storm-metric-label">Peak Gust</div><div class="storm-metric-value">${fmt(active.peak_gust_kph,0)}kph</div></div>
+          <div class="storm-metric"><div class="storm-metric-label">Min Pressure</div><div class="storm-metric-value">${fmt(active.min_pressure_hpa,0)}hPa</div></div>
+          <div class="storm-metric"><div class="storm-metric-label">Rain</div><div class="storm-metric-value">${fmt(active.total_rain_mm,1)}mm</div></div>
+        </div>
+      </div>`;
+  } else {
+    activeEl.innerHTML = '';
+  }
+
+  document.getElementById('storm-totals').innerHTML = `
+    <div class="storm-total"><div class="storm-total-label">Episodes</div><div class="storm-total-value">${totals.episode_count ?? 0}</div></div>
+    <div class="storm-total"><div class="storm-total-label">Stormy hrs</div><div class="storm-total-value">${fmt(totals.stormy_hours,1)}</div></div>
+    <div class="storm-total"><div class="storm-total-label">Total rain</div><div class="storm-total-value">${fmt(totals.total_rain_mm,1)}mm</div></div>
+    <div class="storm-total"><div class="storm-total-label">Strongest wind</div><div class="storm-total-value">${fmt(totals.strongest_wind_kph,0)}kph</div></div>
+    <div class="storm-total"><div class="storm-total-label">Lowest pressure</div><div class="storm-total-value">${fmt(totals.lowest_pressure_hpa,0)}</div></div>`;
+
+  const epEl = document.getElementById('storm-episodes');
+  if (!episodes.length && !(active && active.active)) {
+    epEl.innerHTML = '<div class="empty">No storm episodes in the last 14 days</div>';
+  } else if (!episodes.length) {
+    epEl.innerHTML = '';
+  } else {
+    epEl.innerHTML = episodes.slice(0,8).map(ep => `
+      <div class="storm-episode" data-ep='${JSON.stringify(ep).replace(/'/g,"&#39;")}'>
+        <div>
+          <div class="ep-time">${new Date(ep.start_at).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} · ${ep.duration_h?.toFixed(1)||'0'}h</div>
+          <div class="ep-head">${ep.headline || 'Storm episode'}</div>
+        </div>
+        <div class="sev ${sevClass(ep.severity)}">${ep.severity}</div>
+      </div>`).join('');
+    epEl.querySelectorAll('.storm-episode').forEach(row => {
+      row.addEventListener('click', () => window.openStormDetail(JSON.parse(row.dataset.ep.replace(/&#39;/g,"'"))));
+    });
+  }
+}
+
+window.openStormDetail = function(ep) {
+  const rivers = ep.river_response || {};
+  const warnings = ep.warnings_seen || [];
+  const riverRows = Object.entries(rivers).map(([id,r]) => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px">
+      <div>
+        <div style="font-weight:600;font-size:13px">${id.replace(/river_/,'').replace(/_/g,' ')}</div>
+        <div style="font-size:11px;color:var(--text-mute)">${fmt(r.start_level_m,2)}m → ${fmt(r.peak_level_m,2)}m</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:600;font-size:13px;color:${r.rise_m>0?'var(--warn)':'var(--text-dim)'}">+${fmt(r.rise_m,2)}m</div>
+        <div style="font-size:11px;color:var(--text-mute)">${r.observed_lag_h_from_peak_rain!=null?`lag ${fmt(r.observed_lag_h_from_peak_rain,1)}h`:'—'}</div>
+      </div>
+    </div>`).join('');
+  openDrawer(`
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-mute);font-weight:700;margin-bottom:6px">Storm Episode · ${ep.severity}</div>
+    <h2 style="margin:0 0 8px;font-size:24px">${ep.headline || 'Storm'}</h2>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:20px">
+      ${new Date(ep.start_at).toLocaleString('en-GB')}${ep.end_at?` → ${new Date(ep.end_at).toLocaleString('en-GB')}`:''}<br>
+      Duration ${fmt(ep.duration_h,1)}h · Severity score ${ep.severity_score||'–'}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px">
+      <div class="gauge"><div class="gauge-label">Peak Gust</div><div class="gauge-value">${fmt(ep.peak_gust_kph,0)}<small>kph</small></div></div>
+      <div class="gauge"><div class="gauge-label">Peak Wind</div><div class="gauge-value">${fmt(ep.peak_wind_kph,0)}<small>kph</small></div></div>
+      <div class="gauge"><div class="gauge-label">Total Rain</div><div class="gauge-value">${fmt(ep.total_rain_mm,1)}<small>mm</small></div></div>
+      <div class="gauge"><div class="gauge-label">Min Pressure</div><div class="gauge-value">${fmt(ep.min_pressure_hpa,0)}<small>hPa</small></div></div>
+      <div class="gauge"><div class="gauge-label">3h Drop</div><div class="gauge-value">${fmt(ep.max_pressure_drop_hpa_3h,1)}<small>hPa</small></div></div>
+      <div class="gauge"><div class="gauge-label">Samples</div><div class="gauge-value">${ep.samples||0}</div></div>
+    </div>
+    ${warnings.length ? `
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-mute);margin:24px 0 10px">Warnings Issued</h3>
+      <ul style="padding-left:18px;font-size:13px;color:var(--text-dim);margin:0">${warnings.map(w => `<li style="margin-bottom:4px">${w}</li>`).join('')}</ul>
+    ` : ''}
+    ${riverRows ? `
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-mute);margin:24px 0 4px">River Response</h3>
+      ${riverRows}
+    ` : ''}
+  `);
+};
+
+async function loadStorm() {
+  try {
+    const res = await fetch('/api/prism/storm-tracker');
+    if (!res.ok) throw 0;
+    const j = await res.json();
+    const data = j?.data || j;
+    renderStormTracker(data);
+    if (data.headline) document.getElementById('storm-sub').textContent = data.headline;
+  } catch(e) {
+    document.getElementById('storm-episodes').innerHTML = '<div class="empty">Storm tracker unavailable</div>';
+  }
+}
+
+// ── Prism Intelligence ──
+const PRISM_BASE = 'https://artemis.wispayr.online/api';
+
+function prismCard(label, value, sub, meta, mood, onClick) {
+  const cls = mood ? `mood-${mood}` : '';
+  return `<div class="prism-card ${cls}" onclick="${onClick}">
+    <div class="prism-label">${label}</div>
+    <div class="prism-value">${value}</div>
+    ${sub?`<div class="prism-sub">${sub}</div>`:''}
+    ${meta?`<div class="prism-meta">${meta}</div>`:''}
+  </div>`;
+}
+
+function renderAirQualityDrilldown(d) {
+  const aqi = d.european_aqi;
+  const band = d.band || {};
+  const pollutants = Object.values(d.pollutants || {}).sort((a,b) => b.who_ratio - a.who_ratio);
+
+  // Plain-English AQI explanation
+  let aqiExplain = '';
+  if (aqi == null) aqiExplain = 'Data unavailable.';
+  else if (aqi < 20) aqiExplain = '<strong>Really clean air.</strong> You could be in the countryside on a windy day after rain. No reason to change any plans.';
+  else if (aqi < 40) aqiExplain = '<strong>Good air quality.</strong> This is normal/healthy outdoor air for the UK. Go run, cycle, push the pram — all fine.';
+  else if (aqi < 60) aqiExplain = '<strong>OK but not pristine.</strong> You might smell it if you\'re sensitive. Fine for most people. If you have asthma and you\'re doing hard exercise, maybe keep it shorter.';
+  else if (aqi < 80) aqiExplain = '<strong>Noticeably poor.</strong> Sensitive folk (kids, elderly, asthma/heart) should take it easy outdoors. Healthy adults are fine but might notice it on a long run.';
+  else if (aqi < 100) aqiExplain = '<strong>Genuinely bad air.</strong> Cut outdoor exercise if you can help it. Keep windows shut. Vulnerable people should stay inside.';
+  else aqiExplain = '<strong>Severe pollution.</strong> Avoid outdoor activity. Close windows, use air filtration if you have it. This is unusual for Ayrshire.';
+
+  // What's in the air right now
+  const topPollutants = pollutants.filter(p => p.who_ratio >= 0.3);
+  let composition = '';
+  if (topPollutants.length === 0) {
+    composition = 'All pollutants are well below safe thresholds — genuinely clean air.';
+  } else if (d.dominant_pollutant) {
+    const dom = d.dominant_pollutant;
+    composition = `The air is mostly clean, but <strong>${dom.name}</strong> is the main thing showing up. That comes from <em>${dom.sources.slice(0,3).join(', ').toLowerCase()}</em>.`;
+  }
+
+  // Per-pollutant explainer cards
+  const pollutantCards = pollutants.map(p => {
+    const barColor = p.who_ratio<0.5?'#22c55e':p.who_ratio<1?'#84cc16':p.who_ratio<2?'#eab308':'#ef4444';
+    const status = p.who_ratio < 0.5 ? 'Well below safe level' : p.who_ratio < 1 ? 'Below safe level' : p.who_ratio < 2 ? 'Above WHO guideline' : 'Well above guideline';
+    return `<div style="padding:14px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:var(--surface)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+        <div><strong style="font-size:15px">${p.name}</strong> <span style="color:var(--text-mute);font-size:12px">${p.full_name}</span></div>
+        <div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${p.value}<span style="font-size:11px;color:var(--text-mute);margin-left:3px">μg/m³</span></div>
+      </div>
+      <div style="background:var(--surface-2);height:6px;border-radius:3px;margin:10px 0 6px;overflow:hidden"><div style="height:100%;width:${Math.min(200,p.who_ratio*100)}%;background:${barColor}"></div></div>
+      <div style="font-size:11px;color:var(--text-mute);display:flex;justify-content:space-between">
+        <span>${(p.who_ratio*100).toFixed(0)}% of WHO guideline</span>
+        <span style="color:${barColor};font-weight:600">${status}</span>
+      </div>
+      <div style="font-size:13px;color:var(--text-dim);margin-top:10px;line-height:1.5">${p.description}</div>
+      <div style="font-size:12px;color:var(--text-mute);margin-top:8px;line-height:1.5"><strong>Comes from:</strong> ${p.sources.join(', ')}.</div>
+      <div style="font-size:12px;color:var(--text-mute);margin-top:4px;line-height:1.5"><strong>Health impact:</strong> ${p.health}</div>
+    </div>`;
+  }).join('');
+
+  // Practical advice
+  const advisory = d.advisory || {};
+  const practicalAdvice = advisory.general ? `<div style="padding:14px;background:var(--surface-2);border-radius:10px;margin:16px 0">
+    <div style="font-size:12px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:8px">What should you do?</div>
+    <div style="font-size:14px;margin-bottom:6px"><strong>Most people:</strong> ${advisory.general}</div>
+    <div style="font-size:13px;color:var(--text-dim)"><strong>If you have asthma, heart disease, are pregnant, elderly, or have young kids:</strong> ${advisory.sensitive}</div>
+  </div>` : '';
+
+  return `
+    <h2>Air Quality</h2>
+    <div class="sky-big">AQI ${aqi||'–'}</div>
+    <div style="display:inline-block;font-size:13px;font-weight:700;padding:4px 12px;border-radius:100px;background:${band.color||'#888'}22;color:${band.color||'#888'};margin-top:6px">${band.label||''}</div>
+
+    <div style="font-size:14px;line-height:1.6;margin:16px 0">${aqiExplain}</div>
+    <div style="font-size:13px;line-height:1.6;color:var(--text-dim);margin:12px 0">${composition}</div>
+
+    ${practicalAdvice}
+
+    <h3 style="font-size:12px;margin:20px 0 10px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.08em">What's in the air · Everything measured</h3>
+    <div style="font-size:12px;color:var(--text-mute);margin-bottom:12px;line-height:1.5">
+      We measure five pollutants. Each bar shows how much of that pollutant is in the air compared to the
+      World Health Organisation's safe limit. A full green bar means you're at the safe threshold — under that is good.
+    </div>
+    ${pollutantCards}
+
+    <h3 style="font-size:12px;margin:20px 0 10px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.08em">How the AQI number works</h3>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.6">
+      The European Air Quality Index (EAQI) runs from 0 (pristine) to 100+ (hazardous). It's not arbitrary — it's
+      calculated from the worst-performing pollutant of the five. If PM2.5 is fine but NO₂ is through the roof,
+      the overall AQI reflects the NO₂ problem.
+      <br><br>
+      <strong>0-20 Good</strong> · <strong>20-40 Fair</strong> · <strong>40-60 Moderate</strong> ·
+      <strong>60-80 Poor</strong> · <strong>80-100 Very Poor</strong> · <strong>100+ Extremely Poor</strong>
+      <br><br>
+      Data source: Copernicus Atmosphere Monitoring Service (CAMS) via Open-Meteo. Updated hourly.
+      The nearest monitoring point to Ayrshire produces the values shown.
+    </div>
+  `;
+}
+
+window.__prism = {};
+window.openPrismDetail = (key) => {
+  const d = window.__prism[key];
+  if (!d) return;
+  const map = {
+    beaufort: `<h2>Beaufort Scale</h2><div class="sky-big">Force ${d.beaufort_number} · ${d.description}</div><div class="sky-sub">${d.sea_state||''}</div><div style="margin-top:12px;font-size:13px;color:var(--text-dim)">Wind ${d.wind_speed_mph} mph · Gusts reach F${d.gust_beaufort} (${d.wind_gusts_mph} mph) · Expected wave height: ${d.wave_height_range}</div>`,
+    pressure: `<h2>Pressure Tendency</h2><div class="sky-big">${d.arrow} ${d.current_hpa} hPa</div><div class="sky-sub">${d.descriptor} · ${d.rate_hpa_3h>0?'+':''}${d.rate_hpa_3h} hPa/3h</div>${d.storm_signal?'<div style="margin-top:12px;padding:10px;background:rgba(168,85,247,0.08);border-left:3px solid #a855f7;border-radius:6px;font-size:13px">⚠️ Storm signal — pressure falling rapidly</div>':''}<div style="margin-top:16px;font-size:12px;color:var(--text-mute)">Normal ~1013 hPa. Below 1000 hPa = deep low, below 980 hPa = severe storm.</div>`,
+    fog: `<h2>Fog Risk</h2><div class="sky-big" style="text-transform:capitalize">${d.fog_risk}</div><div class="sky-sub">Dew ${d.dew_point_c}°C · Spread ${d.spread_c}°C · Cloud base ${d.estimated_cloud_base_m}m</div><div style="margin-top:16px;font-size:12px;color:var(--text-mute)">Spread &lt;2.5°C = high risk · &lt;4°C = moderate · Rule: spread × 400ft ≈ cloud base height</div>`,
+    risk: `<h2>Maritime Risk</h2><div class="sky-big">${d.score}/10</div><div class="sky-sub" style="text-transform:capitalize">${d.risk_level}</div><div style="margin:12px 0;font-size:14px">${d.recommendation||''}</div>${d.factors?.length?`<h3 style="font-size:12px;margin:12px 0 6px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.08em">Factors</h3><ul style="font-size:13px;color:var(--text-dim);padding-left:18px">${d.factors.map(f=>`<li>${f}</li>`).join('')}</ul>`:''}`,
+    sar: `<h2>SAR Difficulty</h2><div class="sky-big">${d.difficulty}/10</div><div class="sky-sub">${d.assessment||''}</div><div style="margin:12px 0;font-size:13px;color:var(--text-dim)">${d.is_dark?'🌙 Night operations':'☀️ '+d.daylight_remaining_h+'h daylight'} · Water ${d.sea_temp_c}°C · Survival: ${d.estimated_survival_time}</div>${d.factors?.length?`<ul style="font-size:13px;color:var(--text-dim);padding-left:18px;margin-top:8px">${d.factors.map(f=>`<li>${f}</li>`).join('')}</ul>`:''}`,
+    airquality: renderAirQualityDrilldown(d),
+    storm: `<h2>Storm Forecast</h2><div class="sky-big">${d.label||'–'}</div><div class="sky-sub" style="text-transform:capitalize">${d.trajectory?.replace(/_/g,' ')||''}</div>${d.in_storm?`<div style="margin-top:12px;font-size:13px;color:var(--text-dim)">Wind ${d.current?.wind_mph}mph · Gusts ${d.current?.gusts_mph}mph · Pressure ${d.current?.pressure_hpa} hPa${d.hours_remaining!=null?' · '+d.hours_remaining+'h remaining':''}${d.peak?'<br>Peak gusts forecast: '+d.peak.gust_mph+'mph'+(d.peak.hours_until?' in '+d.peak.hours_until+'h':''):''}</div>`:''}`,
+    rain: `<h2>Rain Nowcast</h2><div class="sky-big">${d.label||'—'}</div>${d.is_raining_now?`<div class="sky-sub">Currently ${d.current_precip_mm} mm/h</div>`:''}<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:16px 0">${(d.outlook_6h||[]).map(h=>`<div style="text-align:center;padding:8px;background:${h.raining?'rgba(59,130,246,0.1)':'var(--surface-2)'};border:1px solid var(--line);border-radius:6px"><div style="font-size:10px;color:var(--text-mute)">${new Date(h.time).toLocaleTimeString('en-GB',{hour:'2-digit'})}</div><div style="font-size:20px;margin:4px 0">${h.raining?'💧':'☁️'}</div><div style="font-size:11px;font-weight:600">${h.probability}%</div></div>`).join('')}</div><div style="font-size:12px;color:var(--text-mute)">Rain detected when hourly probability ≥ 50% OR precipitation ≥ 0.2mm.</div>`,
+    aurora: `<h2>Aurora Viewing</h2><div class="sky-big">${d.score}<span style="font-size:20px;color:var(--text-mute)">/100</span></div><div class="sky-sub" style="text-transform:capitalize">${d.chance}</div><div style="margin:12px 0;font-size:14px">${d.advice||''}</div><h3 style="font-size:12px;margin:16px 0 8px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.08em">Factor scores</h3><div style="font-size:13px;color:var(--text-dim);line-height:1.8">Geomagnetic (Kp): <strong>${d.factor_scores?.geomagnetic}/40</strong> · Kp ${d.kp_now}<br>Darkness: <strong>${d.factor_scores?.darkness}/25</strong> · ${d.is_dark?'Dark now':'Daylight'}<br>Cloud: <strong>${d.factor_scores?.cloud}/25</strong> · ${d.cloud_cover_pct}% cloud<br>Moon: <strong>${d.factor_scores?.moon}/10</strong> · ${d.moon_illumination_pct}% ${d.moon_phase}</div>${d.blockers?.length?`<h3 style="font-size:12px;margin:16px 0 8px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.08em">Blockers</h3><ul style="font-size:13px;color:var(--text-dim);padding-left:18px">${d.blockers.map(b=>`<li>${b}</li>`).join('')}</ul>`:''}`,
+    tide: `<h2>Tidal State</h2><div class="sky-big">${d.arrow} ${d.current_height_m!=null?d.current_height_m+'m':'—'}</div><div class="sky-sub" style="text-transform:capitalize">${d.phase}</div><div style="margin:12px 0;font-size:13px;color:var(--text-dim);line-height:1.8">${d.next_high?`Next high: <strong>${d.next_high.height_m}m in ${d.next_high.hours_until}h</strong><br>`:''}${d.next_low?`Next low: <strong>${d.next_low.height_m}m in ${d.next_low.hours_until}h</strong><br>`:''}24h range: <strong>${d.tidal_range_m}m</strong> (${d.tide_type})</div><div style="font-size:12px;color:var(--text-mute)">Spring tides ≥5m range (new/full moon). Neap tides &lt;3.5m range (quarter moons). Heights in metres above Mean Sea Level.</div>`,
+    waves: `<h2>Wave Analysis</h2><div class="sky-big">${d.wave_height_m}m / ${d.wave_period_s}s</div><div class="sky-sub">${d.sea_type}</div><div style="margin:12px 0;font-size:13px;color:var(--text-dim);line-height:1.8">Wavelength: ${d.wavelength_m}m · Steepness: ${d.steepness}<br>Breaking risk: <strong style="text-transform:capitalize">${d.breaking_risk}</strong> · Trend: <strong>${d.trend}</strong><br>Swell component: ${d.swell_component_m}m (${(d.swell_ratio*100).toFixed(0)}%)<br>Sea surface temp: ${d.sea_surface_temp_c}°C</div>`,
+  };
+  openDrawer(map[key] || `<pre style="font-size:11px;color:var(--text-dim);white-space:pre-wrap;word-break:break-all">${JSON.stringify(d,null,2)}</pre>`);
+};
+
+async function loadPrism() {
+  try {
+    const [beaufort, risk, pressure, fog, sar, waves, storm, airquality, rain, aurora, tide] = await Promise.all([
+      fetch(`${PRISM_BASE}/beaufort/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/maritime-risk/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/pressure-tendency/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/dew-point/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/sar-difficulty/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/wave-analysis`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/storm-forecast/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/air-quality/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/rain-nowcast/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/aurora-viewing/${currentLoc}`).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch(`${PRISM_BASE}/tidal-state`).then(r=>r.ok?r.json():null).catch(()=>null),
+    ]);
+    window.__prism = {
+      beaufort: beaufort?.data, risk: risk?.data, pressure: pressure?.data,
+      fog: fog?.data, sar: sar?.data, waves: waves?.data, storm: storm?.data, airquality: airquality?.data,
+      rain: rain?.data, aurora: aurora?.data, tide: tide?.data,
+    };
+    const atm = [];
+    const mar = [];
+
+    if (storm?.data) {
+      const d = storm.data;
+      if (d.in_storm) atm.push(prismCard('⛈️ Storm', d.label, `Trajectory: ${d.trajectory?.replace(/_/g,' ')}`, d.ending_at?`Eases ${new Date(d.ending_at).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}`:'', d.trajectory==='intensifying'?'bad':'storm', "openPrismDetail('storm')"));
+      else if (d.storm_approaching) atm.push(prismCard('⛈️ Incoming', d.label, 'Storm approaching', d.onset_time?`Expected ${new Date(d.onset_time).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}`:'', 'warn', "openPrismDetail('storm')"));
+    }
+    if (pressure?.data) {
+      const d = pressure.data;
+      atm.push(prismCard('📊 Pressure', `${d.arrow} ${d.current_hpa} hPa`, d.descriptor, `${d.rate_hpa_3h>0?'+':''}${d.rate_hpa_3h} hPa/3h`, d.storm_signal?'storm':'', "openPrismDetail('pressure')"));
+    }
+    if (rain?.data) {
+      const d = rain.data;
+      const mood = d.is_raining_now ? 'warn' : (d.hours_until_rain !== null && d.hours_until_rain < 2) ? 'warn' : '';
+      const strip = (d.outlook_6h || []).map(h => h.raining ? '💧' : '·').join('');
+      atm.push(prismCard('☔ Rain', d.label, strip ? `6h: ${strip}` : '', d.is_raining_now ? `${d.current_precip_mm} mm/h now` : '', mood, "openPrismDetail('rain')"));
+    }
+    if (fog?.data) {
+      const d = fog.data;
+      const mood = d.fog_risk==='high'?'bad':d.fog_risk==='moderate'?'warn':'good';
+      atm.push(prismCard('🌫️ Fog', d.fog_risk, `Dew ${d.dew_point_c}°C · Spread ${d.spread_c}°C`, `Cloud base ${d.estimated_cloud_base_m}m`, mood, "openPrismDetail('fog')"));
+    }
+    if (airquality?.data) {
+      const d = airquality.data;
+      const aqi = d.european_aqi;
+      const mood = aqi>80?'bad':aqi>60?'warn':aqi>40?'':'good';
+      const cls = mood ? `mood-${mood}` : '';
+      const topPollutants = Object.values(d.pollutants || {}).sort((a,b) => b.who_ratio - a.who_ratio);
+      const pollutantChips = topPollutants.slice(0,5).map(p => {
+        const barColor = p.who_ratio<0.5?'#22c55e':p.who_ratio<1?'#84cc16':p.who_ratio<2?'#eab308':'#ef4444';
+        const barWidth = Math.min(100, p.who_ratio * 100);
+        return `<div style="flex:1;min-width:90px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.5px;font-weight:600"><span>${p.name}</span><span>${(p.who_ratio*100).toFixed(0)}%</span></div>
+          <div style="font-size:14px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums">${p.value}<span style="font-size:10px;color:var(--text-mute);margin-left:2px">μg/m³</span></div>
+          <div style="background:var(--surface-2);height:3px;border-radius:2px;margin-top:4px;overflow:hidden"><div style="height:100%;width:${barWidth}%;background:${barColor}"></div></div>
+        </div>`;
+      }).join('');
+
+      // Plain-English one-liner
+      let plainSummary = '';
+      if (aqi == null) plainSummary = 'Data unavailable';
+      else if (aqi < 20) plainSummary = 'Really clean — go enjoy being outside';
+      else if (aqi < 40) plainSummary = 'Normal healthy air — all outdoor activity fine';
+      else if (aqi < 60) plainSummary = 'OK but not pristine — sensitive folk ease off hard exercise';
+      else if (aqi < 80) plainSummary = 'Noticeably poor — kids, elderly, asthma should take it easy';
+      else if (aqi < 100) plainSummary = 'Bad air — cut outdoor exercise, keep windows shut';
+      else plainSummary = 'Severe — stay inside, close windows';
+
+      atm.push(`<div class="prism-card ${cls}" onclick="openPrismDetail('airquality')" style="grid-column: span 2">
+        <div class="prism-label">💨 Air Quality</div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-top:6px">
+          <div class="prism-value">AQI ${aqi}</div>
+          <div style="font-size:13px;color:var(--text-dim);font-weight:600;padding:2px 10px;border-radius:100px;background:${d.band?.color || 'var(--surface-2)'}22;color:${d.band?.color || 'var(--text-dim)'}">${d.band?.label || ''}</div>
+        </div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:6px;font-weight:500">${plainSummary}</div>
+        <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">${pollutantChips}</div>
+        ${d.dominant_pollutant ? `<div class="prism-meta" style="margin-top:10px">Mainly from ${d.dominant_pollutant.name} — sources: ${d.dominant_pollutant.sources?.slice(0,2).join(', ').toLowerCase() || ''}</div>` : ''}
+        <div class="prism-meta" style="margin-top:6px;color:var(--text-mute)">Tap for full explanation →</div>
+      </div>`);
+    }
+    if (aurora?.data && aurora.data.score >= 25) {
+      const d = aurora.data;
+      const mood = d.score >= 75 ? 'good' : d.score >= 55 ? '' : 'warn';
+      atm.push(prismCard('🌌 Aurora', d.chance, `${d.score}/100 · Kp ${d.kp_now}`, d.advice, mood, "openPrismDetail('aurora')"));
+    }
+
+    if (risk?.data) {
+      const d = risk.data;
+      const mood = d.risk_level==='extreme'||d.risk_level==='high'?'bad':d.risk_level==='moderate'?'warn':'good';
+      mar.push(prismCard('⚓ Maritime Risk', `${d.score}/10`, d.risk_level, d.recommendation || '', mood, "openPrismDetail('risk')"));
+    }
+    if (beaufort?.data) {
+      const d = beaufort.data;
+      mar.push(prismCard('💨 Beaufort', `F${d.beaufort_number}`, d.description, d.sea_state, d.beaufort_number>=8?'bad':d.beaufort_number>=6?'warn':'', "openPrismDetail('beaufort')"));
+    }
+    if (waves?.data) {
+      const d = waves.data;
+      const mood = d.breaking_risk === 'high' ? 'warn' : '';
+      mar.push(prismCard('🌊 Waves', `${d.wave_height_m}m / ${d.wave_period_s}s`, d.sea_type, `Breaking: ${d.breaking_risk}`, mood, "openPrismDetail('waves')"));
+    }
+    if (tide?.data) {
+      const d = tide.data;
+      mar.push(prismCard('🌊 Tide', `${d.arrow} ${d.current_height_m != null ? d.current_height_m + 'm' : '—'}`, d.phase, d.next_event ? `Next ${d.next_event.type} in ${d.next_event.hours_until}h` : '', '', "openPrismDetail('tide')"));
+    }
+    if (sar?.data) {
+      const d = sar.data;
+      const mood = d.difficulty >= 7 ? 'bad' : d.difficulty >= 4 ? 'warn' : 'good';
+      mar.push(prismCard('🚁 SAR', `${d.difficulty}/10`, d.assessment || '', d.is_dark ? '🌙 Night ops' : `${d.daylight_remaining_h}h daylight`, mood, "openPrismDetail('sar')"));
+    }
+
+    document.getElementById('prism-atmosphere').innerHTML = atm.length ? `<div class="section-sub" style="margin-bottom:8px">Atmosphere</div><div class="prism-grid">${atm.join('')}</div>` : '';
+    document.getElementById('prism-maritime').innerHTML = mar.length ? `<div class="section-sub" style="margin-bottom:8px">Maritime</div><div class="prism-grid">${mar.join('')}</div>` : '';
+  } catch(e) { /* silent */ }
+}
+
+// ── Rivers ──
+async function loadRivers() {
+  try {
+    const res = await fetch('/api/rivers');
+    const data = await res.json();
+    const rivers = data?.rivers || {};
+    const keys = Object.keys(rivers);
+    const target = document.getElementById('rivers');
+    if (!keys.length) { target.innerHTML = '<div class="empty">No river data</div>'; return; }
+    target.innerHTML = keys.map(k => {
+      const r = rivers[k];
+      const level = r.current?.level_m;
+      const trend = r.trend;
+      const arrow = trend==='rising'?'↑':trend==='falling'?'↓':'→';
+      const color = trend==='rising'?'var(--warn)':trend==='falling'?'var(--info)':'var(--good)';
+      const name = (r.station || k.replace(/_/g,' ').replace(/river /i,'')).replace(/\b\w/g, c => c.toUpperCase());
+      return `<div class="river-row">
+        <div class="river-name">${name}<small>24h: ${fmt(r.min_24h,2)} – ${fmt(r.max_24h,2)}m</small></div>
+        <div class="river-trend" style="color:${color}">${arrow}</div>
+        <div class="river-level">${fmt(level,2)}<small>m</small></div>
+      </div>`;
+    }).join('');
+  } catch(e) { document.getElementById('rivers').innerHTML = '<div class="empty">Rivers unavailable</div>'; }
+}
+
+// ── Sky block ──
+async function loadSky() {
+  const [moon, aurora, uv] = await Promise.all([
+    fetch('/api/moon').then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch('/api/aurora').then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch('/api/uv').then(r=>r.ok?r.json():null).catch(()=>null),
+  ]);
+  const el = document.getElementById('sky');
+  const blocks = [];
+  if (moon) blocks.push(`<div class="sky-block"><h4>🌙 Moon</h4><div class="sky-big">${moon.emoji||''} ${moon.illumination??'–'}%</div><div class="sky-sub">${moon.phase_name||'Unknown'}</div></div>`);
+  if (aurora) {
+    const kp = aurora.kp_index ?? aurora.kp;
+    blocks.push(`<div class="sky-block"><h4>🌌 Aurora</h4><div class="sky-big">Kp ${fmt(kp,1)}</div><div class="sky-sub">${aurora.activity||aurora.level||'Quiet'}</div></div>`);
+  }
+  if (uv) {
+    const v = uv.uv_index ?? uv.current?.uv_index;
+    blocks.push(`<div class="sky-block"><h4>☀️ UV</h4><div class="sky-big">${fmt(v,1)}</div><div class="sky-sub">${uv.category||'—'}</div></div>`);
+  }
+  blocks.push(`<div class="sky-block"><h4>🛰️ ISS</h4><div class="sky-big" id="iss-coord">—</div><div class="sky-sub" id="iss-upd">Fetching…</div></div>`);
+  el.innerHTML = blocks.join('');
+  updateISS();
+  if (window.__issInt) clearInterval(window.__issInt);
+  window.__issInt = setInterval(updateISS, 30000);
+}
+async function updateISS() {
+  try {
+    const r = await fetch('/api/iss'); if (!r.ok) return;
+    const d = await r.json();
+    const c = document.getElementById('iss-coord');
+    const u = document.getElementById('iss-upd');
+    if (c) c.textContent = `${fmt(d.latitude,2)}° / ${fmt(d.longitude,2)}°`;
+    if (u) u.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch {}
+}
+
+// ── Extras ──
+async function loadExtras() {
+  const [fuel, fx, aviation, space, floods] = await Promise.all([
+    fetch('/api/fuel').then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch('/api/finance/fx').then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch('/api/aviation').then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch('/api/space').then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch('/api/floods').then(r=>r.ok?r.json():null).catch(()=>null),
+  ]);
+  const extras = [];
+  if (fuel) {
+    const petrol = fuel?.data?.petrol_avg ?? fuel?.petrol_avg ?? fuel?.uk_avg?.petrol;
+    const diesel = fuel?.data?.diesel_avg ?? fuel?.diesel_avg ?? fuel?.uk_avg?.diesel;
+    if (petrol || diesel) extras.push(`<div class="card"><div class="gauge-label">⛽ Fuel (p/L)</div><div style="display:flex;gap:16px;margin-top:6px"><div><div class="gauge-value">${fmt(petrol,1)}</div><div class="gauge-sub">Petrol</div></div><div><div class="gauge-value">${fmt(diesel,1)}</div><div class="gauge-sub">Diesel</div></div></div></div>`);
+  }
+  if (fx?.rates) {
+    const r = fx.rates;
+    extras.push(`<div class="card"><div class="gauge-label">💱 FX (GBP)</div><div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap"><div><div class="gauge-value">${fmt(r.USD,3)}</div><div class="gauge-sub">USD</div></div><div><div class="gauge-value">${fmt(r.EUR,3)}</div><div class="gauge-sub">EUR</div></div></div></div>`);
+  }
+  const flightCount = aviation?.data?.count ?? aviation?.flights?.length ?? aviation?.count;
+  if (flightCount != null) extras.push(`<div class="card"><div class="gauge-label">✈️ Aviation</div><div class="gauge-value" style="margin-top:6px">${flightCount}</div><div class="gauge-sub">Tracked flights</div></div>`);
+  const satCount = space?.data?.count ?? space?.count;
+  if (satCount != null) extras.push(`<div class="card"><div class="gauge-label">🛰️ Satellites</div><div class="gauge-value" style="margin-top:6px">${satCount}</div><div class="gauge-sub">Overhead/tracked</div></div>`);
+  const floodCount = floods?.warnings?.length ?? floods?.data?.warnings?.length ?? 0;
+  if (floodCount) extras.push(`<div class="card" style="border-color:rgba(255,107,107,0.38)"><div class="gauge-label">🌊 Flood Warnings</div><div class="gauge-value" style="color:var(--bad);margin-top:6px">${floodCount}</div><div class="gauge-sub">Active (SEPA)</div></div>`);
+
+  document.getElementById('extras').innerHTML = extras.join('');
+}
+
+// ── Drawer ──
+function openDrawer(html) {
+  document.getElementById('drawer-body').innerHTML = html;
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-backdrop').classList.add('open');
+}
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
+}
+document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+document.getElementById('drawer-backdrop').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+// ── Theme toggle ──
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const cur = document.documentElement.dataset.theme;
+  document.documentElement.dataset.theme = cur === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('aw-theme', document.documentElement.dataset.theme); } catch {}
+});
+try { const saved = localStorage.getItem('aw-theme'); if (saved) document.documentElement.dataset.theme = saved; } catch {}
+
+// ── Radar ──
+let radarMap=null, radarLayer=null, radarTimestamps=[], radarIdx=0, radarPlaying=true, radarInt=null;
+async function initRadar() {
+  if (radarMap) return;
+  radarMap = L.map('radar-map', {zoomControl:true, attributionControl:false}).setView([55.5, -4.6], 9);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19, attribution: '© OSM · CARTO'
+  }).addTo(radarMap);
+  L.circle([55.4583,-4.6292], {radius: 500, color: '#ffb545', weight: 2, fillOpacity: 0.3}).addTo(radarMap).bindPopup('Ayr');
+  await loadRadarFrames();
+  if (radarPlaying) startRadarAnim();
+  document.getElementById('radar-play').addEventListener('click', toggleRadar);
+  document.getElementById('radar-slider').addEventListener('input', e => { radarIdx = parseInt(e.target.value); showRadarFrame(); });
+}
+async function loadRadarFrames() {
+  try {
+    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const d = await r.json();
+    radarTimestamps = [...(d.radar?.past||[]), ...(d.radar?.nowcast||[])];
+    document.getElementById('radar-slider').max = radarTimestamps.length - 1;
+    radarIdx = (d.radar?.past?.length || 1) - 1;
+    showRadarFrame();
+  } catch(e) { document.getElementById('radar-time').textContent = 'Radar unavailable'; }
+}
+function showRadarFrame() {
+  const f = radarTimestamps[radarIdx]; if (!f) return;
+  if (radarLayer) radarMap.removeLayer(radarLayer);
+  radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${f.path}/256/{z}/{x}/{y}/2/1_1.png`, { opacity: 0.7 }).addTo(radarMap);
+  document.getElementById('radar-time').textContent = new Date(f.time * 1000).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('radar-slider').value = radarIdx;
+}
+function startRadarAnim() {
+  if (radarInt) clearInterval(radarInt);
+  radarInt = setInterval(() => { radarIdx = (radarIdx + 1) % radarTimestamps.length; showRadarFrame(); }, 700);
+}
+function toggleRadar() {
+  radarPlaying = !radarPlaying;
+  document.getElementById('radar-play').textContent = radarPlaying ? '⏸' : '▶';
+  if (radarPlaying) startRadarAnim(); else if (radarInt) { clearInterval(radarInt); radarInt = null; }
+}
+
+// ── Three.js ocean hero ──
+let oceanScene=null, oceanRenderer=null, oceanMesh=null, oceanRaf=null;
+async function initOcean(code, cur) {
+  const host = document.getElementById('hero-canvas');
+  if (!host) return;
+  try {
+    const THREE = await import('three');
+    if (oceanRaf) cancelAnimationFrame(oceanRaf);
+    host.innerHTML = '';
+    const w = host.clientWidth, h = host.clientHeight;
+    oceanScene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(55, w/h, 0.1, 1000);
+    cam.position.set(0, 12, 28); cam.lookAt(0, 0, 0);
+    oceanRenderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+    oceanRenderer.setSize(w, h); oceanRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    host.appendChild(oceanRenderer.domElement);
+
+    const geom = new THREE.PlaneGeometry(60, 40, 80, 60);
+    const mood = moodFor(code);
+    const waveAmp = (cur?.wind_speed_10m || 10) / 40;
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: {value: 0},
+        uColor1: {value: new THREE.Color(mood.m2)},
+        uColor2: {value: new THREE.Color(mood.m3)},
+        uAmp: {value: Math.min(0.8, 0.2 + waveAmp)},
+      },
+      vertexShader: `
+        uniform float uTime; uniform float uAmp;
+        varying float vH;
+        void main(){
+          vec3 p = position;
+          float d = sin(p.x*0.3 + uTime*0.8) * cos(p.y*0.2 + uTime*0.6) * uAmp;
+          d += sin(p.x*0.8 + uTime*1.4) * 0.15 * uAmp;
+          p.z += d; vH = d;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor1; uniform vec3 uColor2;
+        varying float vH;
+        void main(){
+          float t = smoothstep(-0.5, 0.8, vH);
+          vec3 c = mix(uColor1, uColor2, t);
+          gl_FragColor = vec4(c, 0.85);
+        }`,
+      transparent: true,
+    });
+    oceanMesh = new THREE.Mesh(geom, mat); oceanMesh.rotation.x = -Math.PI/2.4; oceanScene.add(oceanMesh);
+    const t0 = performance.now();
+    const loop = () => {
+      mat.uniforms.uTime.value = (performance.now() - t0) * 0.001;
+      oceanRenderer.render(oceanScene, cam);
+      oceanRaf = requestAnimationFrame(loop);
+    };
+    loop();
+    window.addEventListener('resize', () => {
+      if (!oceanRenderer) return;
+      const w2 = host.clientWidth, h2 = host.clientHeight;
+      oceanRenderer.setSize(w2, h2); cam.aspect = w2/h2; cam.updateProjectionMatrix();
+    }, {passive:true});
+  } catch(e) { /* silent */ }
+}
+
+// ── Master loader ──
+async function loadAll() {
+  await Promise.all([loadWeather(), loadWarnings(), loadStorm(), loadPrism(), loadRivers(), loadSky(), loadExtras()]);
+  if (!radarMap) initRadar();
+}
+
+renderLocbar();
+loadAll();
+setInterval(loadAll, 5 * 60 * 1000);
+</script>
+</body>
+</html>

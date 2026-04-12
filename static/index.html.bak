@@ -1,0 +1,3904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AyrWeather · Live Ayrshire Weather</title>
+  <meta name="description" content="Live weather conditions for Ayrshire, Scotland. Forecasts, sea conditions, air quality and rainfall radar." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>" />
+
+  <!-- WispAyr Design System -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/WispAyr/wispayr-design@main/css/wispayr.css" />
+  <script src="https://cdn.jsdelivr.net/gh/WispAyr/wispayr-design@main/js/wispayr.js"></script>
+
+  <!-- Leaflet for radar map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Three.js for ocean visualization -->
+  <script type="importmap">
+  { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }}
+  </script>
+
+  <style>
+    /* ── AyrWeather App Styles ── */
+
+    .aw-page { padding: 24px 0 0; }
+
+    /* Hero banner */
+    .aw-hero {
+      background: linear-gradient(135deg, #0a3d6b 0%, #0c2d48 100%);
+      border-radius: var(--w-radius);
+      padding: 32px;
+      color: white;
+      margin-bottom: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .aw-hero-canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .aw-hero-canvas canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      border-radius: var(--w-radius);
+    }
+    .aw-hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+      position: relative;
+      z-index: 1;
+    }
+    .aw-hero-location {
+      font-size: 14px;
+      opacity: 0.85;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .aw-hero-name {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .aw-hero-temp {
+      font-size: 72px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -2px;
+    }
+    .aw-hero-temp small {
+      font-size: 32px;
+      font-weight: 400;
+      opacity: 0.7;
+    }
+    .aw-hero-desc {
+      font-size: 16px;
+      margin-top: 8px;
+      opacity: 0.9;
+    }
+    .aw-hero-feels {
+      font-size: 13px;
+      opacity: 0.75;
+      margin-top: 4px;
+    }
+    .aw-hero-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-width: 260px;
+    }
+    .aw-hero-stat {
+      background: rgba(255,255,255,0.12);
+      backdrop-filter: blur(8px);
+      border-radius: var(--w-radius-sm);
+      padding: 12px 16px;
+    }
+    .aw-hero-stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      opacity: 0.7;
+      font-weight: 600;
+    }
+    .aw-hero-stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .aw-hero-stat-value small {
+      font-size: 12px;
+      font-weight: 400;
+      opacity: 0.7;
+    }
+    .aw-hero-stat-sub {
+      font-size: 11px;
+      opacity: 0.65;
+    }
+    .aw-sun-pills {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .aw-sun-pill {
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    /* Location selector bar */
+    .aw-location-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .aw-location-bar label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--w-text-muted);
+      white-space: nowrap;
+    }
+    .aw-location-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+    .aw-location-pill {
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--w-border);
+      background: var(--w-bg-card);
+      color: var(--w-text-muted);
+      cursor: pointer;
+      transition: all var(--w-transition);
+      white-space: nowrap;
+    }
+    .aw-location-pill:hover {
+      border-color: var(--w-blue);
+      color: var(--w-blue);
+      background: var(--w-bg-blue);
+    }
+    .aw-location-pill.active {
+      background: var(--w-blue);
+      color: white;
+      border-color: var(--w-blue);
+      font-weight: 600;
+    }
+    .aw-refresh-info {
+      font-size: 11px;
+      color: var(--w-text-light);
+      margin-left: auto;
+      white-space: nowrap;
+    }
+
+    /* Section titles */
+    .aw-section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--w-text);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: -0.2px;
+    }
+    .aw-section-title .aw-icon {
+      font-size: 18px;
+    }
+
+    /* Hourly scroll */
+    .aw-hourly-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+    }
+    .aw-hourly-scroll::-webkit-scrollbar { height: 4px; }
+    .aw-hourly-scroll::-webkit-scrollbar-thumb { background: var(--w-border); border-radius: 2px; }
+    .aw-hourly-item {
+      flex: 0 0 76px;
+      background: var(--w-bg-elevated);
+      border: 1px solid var(--w-border);
+      border-radius: var(--w-radius-sm);
+      padding: 12px 8px;
+      text-align: center;
+      transition: all var(--w-transition);
+    }
+    .aw-hourly-item.now {
+      border-color: var(--w-blue);
+      background: var(--w-bg-blue);
+    }
+    .aw-hourly-time {
+      font-size: 11px;
+      color: var(--w-text-muted);
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    .aw-hourly-icon { font-size: 22px; margin: 4px 0; }
+    .aw-hourly-temp {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--w-text);
+    }
+    .aw-hourly-precip {
+      font-size: 10px;
+      color: var(--w-cyan);
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .aw-hourly-wind {
+      font-size: 10px;
+      color: var(--w-text-light);
+      margin-top: 2px;
+    }
+
+    /* 7-day forecast */
+    .aw-daily-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+    .aw-daily-item {
+      background: var(--w-bg-elevated);
+      border: 1px solid var(--w-border);
+      border-radius: var(--w-radius-sm);
+      padding: 14px 8px;
+      text-align: center;
+      transition: all var(--w-transition);
+    }
+    .aw-daily-item:hover {
+      border-color: var(--w-blue-light);
+      transform: translateY(-2px);
+      box-shadow: var(--w-shadow-sm);
+    }
+    .aw-daily-day {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--w-text);
+      margin-bottom: 6px;
+    }
+    .aw-daily-date {
+      font-size: 10px;
+      color: var(--w-text-light);
+      margin-bottom: 8px;
+    }
+    .aw-daily-icon { font-size: 26px; margin: 6px 0; }
+    .aw-daily-temps {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .aw-daily-high {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--w-text);
+    }
+    .aw-daily-low {
+      font-size: 14px;
+      color: var(--w-text-light);
+    }
+    .aw-daily-precip {
+      font-size: 10px;
+      color: var(--w-cyan);
+      font-weight: 600;
+      margin-top: 6px;
+    }
+    .aw-daily-uv {
+      font-size: 10px;
+      color: var(--w-orange);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    /* Two-column layout */
+    .aw-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    /* Sea conditions */
+    .aw-sea-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .aw-sea-stat {
+      background: var(--w-bg-elevated);
+      border: 1px solid var(--w-border);
+      border-radius: var(--w-radius-sm);
+      padding: 16px;
+      text-align: center;
+    }
+    .aw-sea-icon { font-size: 28px; margin-bottom: 8px; }
+    .aw-sea-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--w-text-muted);
+      font-weight: 600;
+    }
+    .aw-sea-value {
+      font-size: 24px;
+      font-weight: 800;
+      margin-top: 4px;
+      color: var(--w-text);
+    }
+    .aw-sea-unit {
+      font-size: 12px;
+      color: var(--w-text-light);
+    }
+
+    /* Prism derived intelligence */
+    .aw-prism-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .aw-prism-card {
+      background: var(--w-bg-elevated);
+      border: 1px solid var(--w-border);
+      border-radius: var(--w-radius-sm);
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .aw-prism-card.risk-low { border-left: 3px solid #22c55e; }
+    .aw-prism-card.risk-moderate { border-left: 3px solid #f59e0b; }
+    .aw-prism-card.risk-high { border-left: 3px solid #ef4444; }
+    .aw-prism-card.risk-extreme { border-left: 3px solid #dc2626; background: rgba(239,68,68,0.05); }
+    .aw-prism-card.storm { border-left: 3px solid #a855f7; background: rgba(168,85,247,0.04); }
+    .aw-prism-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--w-text-muted);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .aw-prism-value {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--w-text);
+      line-height: 1.1;
+    }
+    .aw-prism-sub {
+      font-size: 12px;
+      color: var(--w-text-light);
+      margin-top: 6px;
+    }
+    .aw-prism-meta {
+      font-size: 11px;
+      color: var(--w-text-muted);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--w-border);
+    }
+    .aw-prism-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: 6px;
+    }
+    .aw-prism-badge.low { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .aw-prism-badge.moderate { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .aw-prism-badge.high { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .aw-prism-badge.extreme { background: rgba(220,38,38,0.2); color: #dc2626; }
+    .aw-prism-badge.negligible { background: rgba(100,116,139,0.15); color: #64748b; }
+    .aw-prism-footer {
+      font-size: 10px;
+      color: var(--w-text-muted);
+      text-align: right;
+      margin-top: 8px;
+      font-style: italic;
+    }
+    .aw-prism-footer a { color: var(--w-text-muted); text-decoration: none; }
+    .aw-prism-footer a:hover { color: var(--w-text-light); }
+
+    .aw-prism-card { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+    .aw-prism-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+
+    /* Drilldown modal */
+    .aw-prism-modal { display: none; position: fixed; inset: 0; z-index: 1000; }
+    .aw-prism-modal.open { display: block; }
+    .aw-prism-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    .aw-prism-modal-body {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: var(--w-bg); border: 1px solid var(--w-border); border-radius: var(--w-radius);
+      max-width: 600px; width: calc(100% - 40px); max-height: 90vh; overflow-y: auto;
+      padding: 24px; color: var(--w-text);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .aw-prism-modal-close {
+      position: absolute; top: 16px; right: 16px;
+      background: var(--w-bg-elevated); border: 1px solid var(--w-border);
+      border-radius: 50%; width: 32px; height: 32px;
+      cursor: pointer; font-size: 16px; color: var(--w-text-muted);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .aw-prism-modal-close:hover { color: var(--w-text); background: var(--w-border); }
+    .aw-prism-modal-body h2 { margin: 0 0 4px 0; font-size: 20px; }
+    .aw-prism-modal-body h3 { margin: 20px 0 8px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--w-text-muted); }
+    .aw-prism-modal-body p { font-size: 13px; color: var(--w-text-light); margin: 6px 0; }
+    .aw-prism-modal-body ul { font-size: 13px; color: var(--w-text-light); padding-left: 20px; margin: 8px 0; }
+    .aw-prism-modal-body a { color: var(--w-accent, #3b82f6); }
+    .aw-prism-table { width: 100%; font-size: 13px; margin: 12px 0; border-collapse: collapse; }
+    .aw-prism-table td { padding: 6px 0; border-bottom: 1px solid var(--w-border); }
+    .aw-prism-table td:first-child { color: var(--w-text-muted); }
+    .aw-prism-table td:last-child { text-align: right; }
+
+    /* Ocean 3D visualization */
+    .aw-ocean-wrap {
+      position: relative;
+      width: 100%;
+      height: 260px;
+      border-radius: var(--w-radius-sm);
+      overflow: hidden;
+      margin-bottom: 12px;
+      background: linear-gradient(180deg, #87CEEB 0%, #4a90b8 40%, #1a5276 100%);
+    }
+    .aw-ocean-wrap canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    .aw-ocean-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 10px 14px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.45));
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      pointer-events: none;
+    }
+    .aw-ocean-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.8);
+      font-weight: 600;
+    }
+    .aw-ocean-val {
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+    }
+    .aw-ocean-val span { font-size: 11px; font-weight: 500; opacity: 0.7; }
+    @media (max-width: 640px) {
+      .aw-ocean-wrap { height: 180px; }
+    }
+
+    /* Air Quality */
+    .aw-aqi-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .aw-aqi-badge {
+      font-size: 13px;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 20px;
+    }
+    .aw-aqi-score {
+      font-size: 32px;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .aw-aqi-bar-track {
+      height: 10px;
+      border-radius: 5px;
+      background: var(--w-bg-elevated);
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .aw-aqi-bar-fill {
+      height: 100%;
+      border-radius: 5px;
+      transition: width 0.8s ease;
+      background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+    }
+    .aw-aqi-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--w-text-light);
+      margin-bottom: 16px;
+    }
+    .aw-aqi-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .aw-aqi-stat {
+      background: var(--w-bg-elevated);
+      border-radius: var(--w-radius-xs);
+      padding: 10px;
+      text-align: center;
+    }
+    .aw-aqi-stat-label {
+      font-size: 10px;
+      color: var(--w-text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .aw-aqi-stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .aw-aqi-stat-unit {
+      font-size: 10px;
+      color: var(--w-text-light);
+    }
+
+    /* Radar */
+    #radar-map {
+      height: 380px;
+      border-radius: var(--w-radius-sm);
+      overflow: hidden;
+      border: 1px solid var(--w-border);
+    }
+    .aw-radar-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .aw-radar-btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--w-border);
+      background: var(--w-bg-elevated);
+      color: var(--w-text-muted);
+      cursor: pointer;
+      transition: all var(--w-transition);
+    }
+    .aw-radar-btn:hover {
+      border-color: var(--w-blue);
+      color: var(--w-blue);
+    }
+    .aw-radar-btn.active {
+      background: var(--w-blue);
+      color: white;
+      border-color: var(--w-blue);
+    }
+    .aw-radar-time {
+      font-size: 12px;
+      color: var(--w-text-muted);
+      margin-left: auto;
+    }
+
+    /* Location overview grid */
+    .aw-overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .aw-overview-card {
+      background: var(--w-bg-card);
+      border: 1px solid var(--w-border);
+      border-radius: var(--w-radius-sm);
+      padding: 16px;
+      cursor: pointer;
+      transition: all var(--w-transition);
+      box-shadow: var(--w-shadow-sm);
+    }
+    .aw-overview-card:hover {
+      box-shadow: var(--w-shadow-md);
+      transform: translateY(-2px);
+      border-color: var(--w-blue-light);
+    }
+    .aw-overview-card.active {
+      border-color: var(--w-blue);
+      box-shadow: 0 0 0 2px var(--w-bg-blue);
+    }
+    .aw-overview-name {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .aw-overview-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .aw-overview-temp {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -1px;
+    }
+    .aw-overview-icon { font-size: 28px; }
+    .aw-overview-desc {
+      font-size: 12px;
+      color: var(--w-text-muted);
+      margin-top: 4px;
+    }
+    .aw-overview-detail {
+      font-size: 11px;
+      color: var(--w-text-light);
+      margin-top: 6px;
+      display: flex;
+      gap: 12px;
+    }
+
+    /* Loading */
+    .aw-loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--w-text-muted);
+    }
+    .aw-loading-dots {
+      display: inline-flex;
+      gap: 4px;
+    }
+    .aw-loading-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--w-blue);
+      animation: awPulse 1.4s ease-in-out infinite;
+    }
+    .aw-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .aw-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes awPulse { 0%,100% { opacity: 0.2; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }
+
+    /* Error */
+    .aw-error {
+      background: var(--w-bg-red);
+      border: 1px solid var(--w-red);
+      border-radius: var(--w-radius-sm);
+      padding: 20px;
+      text-align: center;
+      color: var(--w-red);
+      font-weight: 600;
+    }
+
+    /* Tabs */
+    .aw-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid var(--w-border);
+      padding-bottom: 0;
+    }
+    .aw-tab {
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 20px;
+      border: none;
+      background: none;
+      color: var(--w-text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all var(--w-transition);
+    }
+    .aw-tab:hover { color: var(--w-text); }
+    .aw-tab.active {
+      color: var(--w-blue);
+      border-bottom-color: var(--w-blue);
+    }
+    .aw-tab-panel { display: none; }
+    .aw-tab-panel.active { display: block; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .aw-two-col { grid-template-columns: 1fr; }
+      .aw-daily-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .aw-hero { padding: 20px; }
+      .aw-hero-name { font-size: 22px; }
+      .aw-hero-temp { font-size: 52px; }
+      .aw-hero-temp small { font-size: 24px; }
+      .aw-hero-stats { min-width: unset; grid-template-columns: 1fr 1fr; }
+      .aw-daily-grid { grid-template-columns: repeat(3, 1fr); }
+      .aw-overview-grid { grid-template-columns: repeat(2, 1fr); }
+      .aw-location-pills { gap: 4px; }
+      .aw-location-pill { font-size: 12px; padding: 5px 10px; }
+      .aw-tabs { overflow-x: auto; }
+      .aw-tab { font-size: 13px; padding: 8px 14px; white-space: nowrap; }
+    }
+    @media (max-width: 420px) {
+      .aw-daily-grid { grid-template-columns: repeat(2, 1fr); }
+      .aw-overview-grid { grid-template-columns: 1fr; }
+    }
+
+
+        /* Weather Warnings */
+    .aw-warnings { margin-bottom: 24px; }
+    .aw-warning-card {
+      border-radius: var(--w-radius);
+      padding: 18px 22px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      text-decoration: none;
+      color: inherit;
+      transition: all var(--w-transition);
+      position: relative;
+      overflow: hidden;
+    }
+    .aw-warning-card:hover { transform: translateY(-2px); box-shadow: var(--w-shadow-md); }
+    .aw-warning-yellow { background: #fef3c7; border: 1.5px solid #f59e0b; }
+    .aw-warning-amber { background: #ffedd5; border: 1.5px solid #f97316; }
+    .aw-warning-red { background: #fee2e2; border: 1.5px solid #ef4444; }
+    [data-theme="dark"] .aw-warning-yellow { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.4); }
+    [data-theme="dark"] .aw-warning-amber { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.4); }
+    [data-theme="dark"] .aw-warning-red { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.4); }
+    .aw-warning-icon { font-size: 32px; flex-shrink: 0; margin-top: 2px; }
+    .aw-warning-body { flex: 1; min-width: 0; }
+    .aw-warning-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+    .aw-warning-title { font-size: 15px; font-weight: 800; letter-spacing: -0.2px; }
+    .aw-warning-yellow .aw-warning-title { color: #92400e; }
+    .aw-warning-amber .aw-warning-title { color: #9a3412; }
+    .aw-warning-red .aw-warning-title { color: #991b1b; }
+    [data-theme="dark"] .aw-warning-yellow .aw-warning-title { color: #fbbf24; }
+    [data-theme="dark"] .aw-warning-amber .aw-warning-title { color: #fb923c; }
+    [data-theme="dark"] .aw-warning-red .aw-warning-title { color: #f87171; }
+    .aw-warning-badge {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; padding: 2px 8px; border-radius: 10px; line-height: 1.4;
+    }
+    .aw-warning-yellow .aw-warning-badge { background: #f59e0b; color: #fff; }
+    .aw-warning-amber .aw-warning-badge { background: #f97316; color: #fff; }
+    .aw-warning-red .aw-warning-badge { background: #ef4444; color: #fff; }
+    .aw-warning-timing {
+      font-size: 12px; font-weight: 600; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .aw-warning-yellow .aw-warning-timing { color: #a16207; }
+    .aw-warning-amber .aw-warning-timing { color: #c2410c; }
+    .aw-warning-red .aw-warning-timing { color: #b91c1c; }
+    [data-theme="dark"] .aw-warning-yellow .aw-warning-timing { color: #fcd34d; }
+    [data-theme="dark"] .aw-warning-amber .aw-warning-timing { color: #fdba74; }
+    [data-theme="dark"] .aw-warning-red .aw-warning-timing { color: #fca5a5; }
+    .aw-warning-areas { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .aw-warning-area {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      background: rgba(0,0,0,0.06); color: var(--w-text-muted); font-weight: 500;
+    }
+    [data-theme="dark"] .aw-warning-area { background: rgba(255,255,255,0.08); }
+    .aw-warning-area.ayrshire { font-weight: 700; }
+    .aw-warning-yellow .aw-warning-area.ayrshire { background: rgba(245,158,11,0.25); color: #92400e; }
+    .aw-warning-amber .aw-warning-area.ayrshire { background: rgba(249,115,22,0.25); color: #9a3412; }
+    .aw-warning-red .aw-warning-area.ayrshire { background: rgba(239,68,68,0.25); color: #991b1b; }
+    [data-theme="dark"] .aw-warning-yellow .aw-warning-area.ayrshire { background: rgba(245,158,11,0.3); color: #fbbf24; }
+    [data-theme="dark"] .aw-warning-amber .aw-warning-area.ayrshire { background: rgba(249,115,22,0.3); color: #fb923c; }
+    [data-theme="dark"] .aw-warning-red .aw-warning-area.ayrshire { background: rgba(239,68,68,0.3); color: #f87171; }
+    .aw-warning-source { font-size: 10px; color: var(--w-text-light); display: flex; align-items: center; gap: 4px; }
+    .aw-warning-pulse {
+      display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      animation: awWarningPulse 2s ease-in-out infinite;
+    }
+    .aw-warning-amber .aw-warning-pulse { background: #f97316; }
+    .aw-warning-red .aw-warning-pulse { background: #ef4444; }
+    @keyframes awWarningPulse { 0%,100% { opacity: 0.4; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }
+    .aw-warnings-clear {
+      background: var(--w-bg-elevated); border: 1px solid var(--w-border);
+      border-radius: var(--w-radius); padding: 16px 20px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .aw-clear-dot {
+      width: 10px; height: 10px; border-radius: 50%; background: #22c55e;
+      flex-shrink: 0; box-shadow: 0 0 6px rgba(34,197,94,0.4);
+    }
+    .aw-clear-text { font-size: 13px; font-weight: 600; color: var(--w-text-muted); }
+    .aw-clear-sub { font-size: 11px; color: var(--w-text-light); }
+
+    /* Smooth section spacing */
+    .aw-section { margin-bottom: 28px; }
+
+    /* ── Ayrshire Live Intelligence Dashboard ── */
+    .ali-dashboard { margin: 0 0 24px; }
+    .ali-header {
+      display: flex; align-items: center; gap: 10px;
+      margin: 0 0 12px; padding: 0 2px;
+    }
+    .ali-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--w-text-muted);
+    }
+    .ali-pulse {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.6);
+      animation: ali-pulse 2s infinite;
+    }
+    @keyframes ali-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34,197,94,.6); }
+      70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+    .ali-meta { margin-left: auto; font-size: 10px; color: var(--w-text-light); }
+
+    .ali-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .ali-tile {
+      background: var(--w-bg-card);
+      border: 1px solid var(--w-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      position: relative;
+      overflow: hidden;
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .ali-tile::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; background: var(--ali-accent, #94a3b8);
+    }
+    .ali-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+    .ali-tile-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--w-text-muted);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .ali-tile-badge {
+      font-size: 8px; padding: 1px 5px; border-radius: 3px;
+      background: rgba(99,102,241,.1); color: #6366f1;
+      font-weight: 700; letter-spacing: 0.5px;
+    }
+    .ali-tile-badge.factual { background: rgba(16,185,129,.1); color: #059669; }
+    .ali-tile-value {
+      font-size: 17px; font-weight: 700; color: var(--w-text);
+      margin: 4px 0 2px; line-height: 1.15;
+    }
+    .ali-tile-value small { font-size: 10px; font-weight: 500; color: var(--w-text-muted); }
+    .ali-tile-sub {
+      font-size: 10px; color: var(--w-text-light); line-height: 1.3;
+    }
+    .ali-tile.sev-critical { --ali-accent: #dc2626; }
+    .ali-tile.sev-critical .ali-tile-value { color: #dc2626; }
+    .ali-tile.sev-warn { --ali-accent: #ea580c; }
+    .ali-tile.sev-warn .ali-tile-value { color: #ea580c; }
+    .ali-tile.sev-caution { --ali-accent: #ca8a04; }
+    .ali-tile.sev-info { --ali-accent: #3b82f6; }
+    .ali-tile.sev-ok { --ali-accent: #16a34a; }
+
+    [data-theme="dark"] .ali-tile { background: var(--w-bg-card); }
+
+    /* Stack headers for grouped sections */
+    .ali-group { margin-bottom: 18px; }
+    .ali-group-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--w-text-muted);
+      margin: 0 0 8px 2px; display: flex; align-items: center; gap: 6px;
+    }
+    .ali-group-title .ali-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .ali-group-title .ali-dot.derived { background: #6366f1; }
+    .ali-group-title .ali-dot.factual { background: #10b981; }
+    .ali-group-title .ali-dot.alert { background: #dc2626; }
+
+    /* Alert banner */
+    .ali-alert-banner {
+      display: none; align-items: center; gap: 10px;
+      background: linear-gradient(135deg, #fef2f2, #fee2e2);
+      border: 1px solid #fecaca; border-left: 4px solid #dc2626;
+      border-radius: 8px; padding: 10px 14px; margin: 0 0 14px;
+      font-size: 12px; color: #7f1d1d; font-weight: 600;
+    }
+    [data-theme="dark"] .ali-alert-banner {
+      background: linear-gradient(135deg, rgba(127,29,29,.25), rgba(153,27,27,.15));
+      border-color: rgba(220,38,38,.4); color: #fecaca;
+    }
+    .ali-alert-banner.show { display: flex; }
+    .ali-alert-icon { font-size: 18px; }
+
+    /* News/headlines strip */
+    .ali-news-strip {
+      background: var(--w-bg-card); border: 1px solid var(--w-border);
+      border-radius: 10px; padding: 10px 14px; margin: 0 0 14px;
+      display: flex; align-items: center; gap: 12px; overflow: hidden;
+      font-size: 12px;
+    }
+    .ali-news-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; color: #fff; background: #dc2626;
+      padding: 3px 7px; border-radius: 4px; flex-shrink: 0;
+    }
+    .ali-news-items { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--w-text); }
+    .ali-news-item { display: inline-block; margin-right: 24px; }
+    .ali-news-item::after { content: '•'; margin-left: 24px; color: var(--w-text-muted); }
+    .ali-news-item:last-child::after { display: none; }
+
+    /* River Levels */
+    .aw-river-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 6px;
+    }
+    .aw-river-table th {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--w-text-muted);
+      font-weight: 600;
+      padding: 0 10px 8px;
+      text-align: left;
+    }
+    .aw-river-table th:nth-child(n+2) { text-align: center; }
+    .aw-river-row {
+      background: var(--w-bg-elevated);
+      border-radius: var(--w-radius-xs);
+    }
+    .aw-river-row td {
+      padding: 10px;
+      font-size: 13px;
+      border-top: 1px solid var(--w-border);
+      border-bottom: 1px solid var(--w-border);
+    }
+    .aw-river-row td:first-child {
+      border-left: 1px solid var(--w-border);
+      border-radius: var(--w-radius-xs) 0 0 var(--w-radius-xs);
+      font-weight: 600;
+      color: var(--w-text);
+    }
+    .aw-river-row td:last-child {
+      border-right: 1px solid var(--w-border);
+      border-radius: 0 var(--w-radius-xs) var(--w-radius-xs) 0;
+    }
+    .aw-river-row td:nth-child(n+2) { text-align: center; }
+    .aw-river-level {
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .aw-river-level small {
+      font-size: 11px;
+      font-weight: 400;
+      opacity: 0.7;
+    }
+    .aw-river-trend {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .aw-river-range {
+      font-size: 11px;
+      color: var(--w-text-light);
+    }
+
+    /* Sky Watch (Moon + Aurora + ISS) */
+    .aw-sky-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .aw-sky-block {
+      background: var(--w-bg-elevated);
+      border: 1px solid var(--w-border);
+      border-radius: var(--w-radius-sm);
+      padding: 16px;
+    }
+    .aw-sky-block-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--w-text-muted);
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .aw-moon-display {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+    .aw-moon-emoji {
+      font-size: 40px;
+      line-height: 1;
+    }
+    .aw-moon-info {
+      flex: 1;
+    }
+    .aw-moon-phase {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--w-text);
+    }
+    .aw-moon-illum {
+      font-size: 12px;
+      color: var(--w-text-muted);
+      margin-top: 2px;
+    }
+    .aw-illum-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--w-bg-elevated);
+      border: 1px solid var(--w-border);
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .aw-illum-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--w-purple);
+      transition: width 0.8s ease;
+    }
+    .aw-aurora-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .aw-aurora-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .aw-aurora-desc {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--w-text);
+    }
+    .aw-aurora-detail {
+      font-size: 12px;
+      color: var(--w-text-muted);
+      margin-top: 4px;
+    }
+    .aw-aurora-visible {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 12px;
+      margin-top: 8px;
+    }
+    .aw-iss-coords {
+      display: flex;
+      gap: 16px;
+      margin-top: 6px;
+    }
+    .aw-iss-coord {
+      flex: 1;
+    }
+    .aw-iss-coord-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--w-text-muted);
+      font-weight: 600;
+    }
+    .aw-iss-coord-value {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--w-text);
+      margin-top: 2px;
+    }
+    .aw-iss-refresh {
+      font-size: 10px;
+      color: var(--w-text-light);
+      margin-top: 8px;
+    }
+    .aw-sky-full {
+      grid-column: 1 / -1;
+    }
+    @media (max-width: 600px) {
+      .aw-sky-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Quick Stats Bar */
+    .aw-quick-stats {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 12px;
+      margin-bottom: 24px;
+      scrollbar-width: none;
+    }
+    .aw-quick-stats::-webkit-scrollbar { display: none; }
+    .aw-qstat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--w-bg-card);
+      border: 1px solid var(--w-border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--w-text);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .aw-qstat-icon { font-size: 15px; }
+    .aw-qstat-change {
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .aw-qstat-change.up { color: var(--w-red); }
+    .aw-qstat-change.down { color: var(--w-green); }
+
+    /* UV Index Block */
+    .aw-uv-current {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .aw-uv-badge {
+      font-size: 22px;
+      font-weight: 900;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--w-radius-sm);
+      color: white;
+    }
+    .aw-uv-label {
+      font-size: 12px;
+      color: var(--w-text-muted);
+    }
+    .aw-uv-level {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--w-text);
+    }
+    .aw-uv-max {
+      font-size: 12px;
+      color: var(--w-text-muted);
+      margin-bottom: 8px;
+    }
+    .aw-uv-forecast {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .aw-uv-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 12px;
+      color: white;
+    }
+
+    /* Flood Warnings */
+    .aw-flood-summary {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .aw-flood-badge {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 14px;
+    }
+
+    /* Leaflet dark mode overrides */
+    [data-theme="dark"] .leaflet-control-zoom a {
+      background: var(--w-bg-card) !important;
+      color: var(--w-text) !important;
+      border-color: var(--w-border) !important;
+    }
+    [data-theme="dark"] .leaflet-control-attribution {
+      background: rgba(15,23,42,0.8) !important;
+      color: var(--w-text-light) !important;
+    }
+    [data-theme="dark"] .leaflet-control-attribution a {
+      color: var(--w-text-muted) !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- WispAyr header will be injected by wispayr.js -->
+  <header class="w-header"></header>
+
+  <div class="w-container aw-page">
+    <!-- Tabs -->
+    <div class="aw-tabs" id="aw-tabs">
+      <button class="aw-tab active" data-tab="forecast">🌤️ Forecast</button>
+      <button class="aw-tab" data-tab="overview">📍 All Locations</button>
+      <button class="aw-tab" data-tab="radar">🛰️ Radar</button>
+      <button class="aw-tab" data-tab="lightning" id="lightning-tab" style="display:none">⚡ Lightning</button>
+    </div>
+
+    <!-- Tab Panels -->
+    <div class="aw-tab-panel active" id="panel-forecast">
+      <!-- ══ Ayrshire Live Intelligence Dashboard ══ -->
+      <div class="ali-dashboard">
+        <div class="ali-header">
+          <span class="ali-pulse"></span>
+          <span class="ali-title">Ayrshire Live Intelligence</span>
+          <span class="ali-meta" id="ali-meta">—</span>
+        </div>
+
+        <!-- Active alert banner -->
+        <div class="ali-alert-banner" id="ali-alert-banner">
+          <span class="ali-alert-icon">⚠️</span>
+          <span id="ali-alert-text">—</span>
+        </div>
+
+        <!-- Breaking news strip -->
+        <div class="ali-news-strip" id="ali-news-strip" style="display:none">
+          <span class="ali-news-label">LIVE</span>
+          <div class="ali-news-items" id="ali-news-items"></div>
+        </div>
+
+        <!-- DERIVED intelligence (Prism lenses) -->
+        <div class="ali-group">
+          <div class="ali-group-title"><span class="ali-dot derived"></span>Derived Intelligence · Prism Lenses</div>
+          <div class="ali-grid" id="ali-derived-grid">
+            <div class="ali-tile"><div class="ali-tile-label">Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- FACTUAL signals (Siphon sources) -->
+        <div class="ali-group">
+          <div class="ali-group-title"><span class="ali-dot factual"></span>Factual Signals · Siphon Sources</div>
+          <div class="ali-grid" id="ali-factual-grid">
+            <div class="ali-tile"><div class="ali-tile-label">Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Location pills -->
+      <div class="aw-location-bar" id="location-bar"></div>
+
+      <!-- Legacy local-sensors tile (kept hidden; superseded by ALI dashboard) -->
+      <div id="local-sensors" class="aw-sensors" style="display:none">
+        <div id="sensor-counts"></div>
+        <div id="sensor-tiles"></div>
+      </div>
+      <!-- Weather warnings -->
+      <div id="warnings-content"></div>
+
+      <!-- Main content target -->
+      <div id="forecast-content">
+        <div class="aw-loading">
+          <div class="aw-loading-dots">
+            <div class="aw-loading-dot"></div>
+            <div class="aw-loading-dot"></div>
+            <div class="aw-loading-dot"></div>
+          </div>
+          <p class="w-mt-2">Loading weather data…</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="aw-tab-panel" id="panel-overview">
+      <div class="aw-section-title"><span class="aw-icon">📍</span> All Ayrshire Locations</div>
+      <div id="overview-content">
+        <div class="aw-loading">
+          <div class="aw-loading-dots">
+            <div class="aw-loading-dot"></div>
+            <div class="aw-loading-dot"></div>
+            <div class="aw-loading-dot"></div>
+          </div>
+          <p class="w-mt-2">Loading all locations…</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="aw-tab-panel" id="panel-radar">
+      <div class="w-card aw-section">
+        <div class="aw-section-title"><span class="aw-icon">🛰️</span> Live Rainfall Radar</div>
+        <div class="aw-radar-controls">
+          <button class="aw-radar-btn active" id="radar-play-btn" onclick="toggleRadarPlay()">⏸ Playing</button>
+          <span class="aw-radar-time" id="radar-time"></span>
+        </div>
+        <div id="radar-map"></div>
+      </div>
+    </div>
+  </div>
+
+    <!-- Lightning Panel (shown only when strikes detected) -->
+    <div class="aw-tab-panel" id="panel-lightning">
+      <div class="aw-section-title"><span class="aw-icon">⚡</span> Lightning Detection — Blitzortung</div>
+      <div id="lightning-info" style="padding:12px;font-size:13px;color:#666">Checking for lightning activity...</div>
+      <div id="lightning-map" style="height:400px;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;margin-top:12px;display:none"></div>
+    </div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// AyrWeather v2.0 — WispAyr Design System
+// ══════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════
+// Ayrshire Live Intelligence Dashboard
+// Combines Prism (derived) + Siphon (factual) into the front page
+// ══════════════════════════════════════════════════════════════
+const _jget = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : null; } catch(e){ return null; } };
+
+function aliTile(label, value, sub, sev, badge) {
+  const sevClass = sev ? `sev-${sev}` : '';
+  const badgeHtml = badge ? `<span class="ali-tile-badge ${badge==='F'?'factual':''}">${badge}</span>` : '';
+  return `<div class="ali-tile ${sevClass}">
+    <div class="ali-tile-label">${label}${badgeHtml}</div>
+    <div class="ali-tile-value">${value ?? '—'}</div>
+    <div class="ali-tile-sub">${sub ?? ''}</div>
+  </div>`;
+}
+
+function sevFromSignal(sig) {
+  if (!sig) return '';
+  const s = String(sig).toLowerCase();
+  if (/squall|severe|critical|high/.test(s)) return 'critical';
+  if (/strong|warn|heavy|gale/.test(s)) return 'warn';
+  if (/moderate|convergence|localised|caution/.test(s)) return 'caution';
+  if (/light|widespread_light|low/.test(s)) return 'info';
+  if (/steady|normal|negligible|ok|clear/.test(s)) return 'ok';
+  return '';
+}
+
+async function loadAliDashboard() {
+  const metaEl = document.getElementById('ali-meta');
+  // Fetch all sources in parallel
+  const [sensors, intel, wave, catchment, storm, warn, floods, fuel, grid, moon, uv, aurora, news, incidents, rivers] = await Promise.all([
+    _jget('/api/local-sensors/ayrshire'),
+    _jget('/api/prism/intelligence/ayr'),
+    _jget('/api/prism/wave-analysis'),
+    _jget('/api/prism/catchment'),
+    _jget('/api/prism/storm-river'),
+    _jget('/api/warnings'),
+    _jget('/api/floods'),
+    _jget('/api/fuel'),
+    _jget('/api/grid'),
+    _jget('/api/moon'),
+    _jget('/api/uv'),
+    _jget('/api/aurora'),
+    _jget('/api/news/ayrshire'),
+    _jget('/api/transport/incidents'),
+    _jget('/api/rivers'),
+  ]);
+
+  // Meta counts
+  const avCount = sensors?.stations?.aviation_count ?? 0;
+  const rnCount = sensors?.stations?.rainfall_count ?? 0;
+  if (metaEl) metaEl.textContent = `${avCount} airports · ${rnCount} rain gauges · updated ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+
+  // ── Alert banner (highest-priority live alert) ──
+  const bannerEl = document.getElementById('ali-alert-banner');
+  const bannerTxt = document.getElementById('ali-alert-text');
+  const warnList = warn?.warnings || [];
+  const ayrWarn = warnList.find(w => w.affects_ayrshire);
+  if (ayrWarn) {
+    bannerTxt.textContent = `${ayrWarn.severity?.toUpperCase?.()||''} · ${ayrWarn.title} — ${ayrWarn.valid_from} to ${ayrWarn.valid_to}`;
+    bannerEl.classList.add('show');
+  } else {
+    bannerEl.classList.remove('show');
+  }
+
+  // ── News strip ──
+  const newsEl = document.getElementById('ali-news-strip');
+  const newsItemsEl = document.getElementById('ali-news-items');
+  const articles = (news?.articles || []).slice(0, 5);
+  if (articles.length > 0) {
+    newsItemsEl.innerHTML = articles.map(a => `<span class="ali-news-item">${a.title || a.headline || ''}</span>`).join('');
+    newsEl.style.display = 'flex';
+  } else {
+    newsEl.style.display = 'none';
+  }
+
+  // ── DERIVED tiles (Prism lenses) ──
+  const derived = [];
+  const s = sensors?.signals || {};
+  const d = intel?.data || {};
+
+  if (s.micro_wind) {
+    const mw = s.micro_wind;
+    derived.push(aliTile('Micro-Wind', `${mw.mean_speed_kt}<small>kt</small>`,
+      `${mw.descriptor} · spread ${mw.speed_spread_kt}kt · gust ${mw.max_gust_kt||'-'}kt`,
+      sevFromSignal(mw.signal), 'D'));
+  }
+  if (s.pressure_gradient) {
+    const pg = s.pressure_gradient;
+    derived.push(aliTile('Pressure Gradient', `${pg.max_gradient_hpa_per_100km}<small> hPa/100km</small>`,
+      `${pg.descriptor} · ~${pg.geostrophic_wind_est_kt}kt geostrophic`,
+      sevFromSignal(pg.signal), 'D'));
+  }
+  if (s.rain_gradient) {
+    const rg = s.rain_gradient;
+    derived.push(aliTile('Rain Gradient', `${rg.coverage_pct}<small>% wet</small>`,
+      `${rg.descriptor} · max ${rg.max_3h_mm}mm/3h · ${rg.wettest_station||''}`,
+      sevFromSignal(rg.signal), 'D'));
+  }
+  if (d.maritime_risk) {
+    const mr = d.maritime_risk;
+    derived.push(aliTile('Maritime Risk', `${mr.score}<small>/10</small>`,
+      `${mr.risk_level} · ${mr.factors?.[0]||''}`,
+      mr.risk_level==='high'?'critical':(mr.risk_level==='moderate'?'warn':'ok'), 'D'));
+  }
+  if (d.beaufort) {
+    const b = d.beaufort;
+    derived.push(aliTile('Beaufort', `F${b.beaufort_number}<small> · gust F${b.gust_beaufort}</small>`,
+      `${b.description} · ${b.sea_state}`,
+      b.beaufort_number>=7?'warn':(b.beaufort_number>=5?'caution':'info'), 'D'));
+  }
+  if (d.pressure_tendency) {
+    const pt = d.pressure_tendency;
+    derived.push(aliTile('Pressure Tendency', `${pt.current_hpa}<small> hPa ${pt.arrow}</small>`,
+      `${pt.descriptor} · ${pt.rate_hpa_3h>=0?'+':''}${pt.rate_hpa_3h} hPa/3h`,
+      pt.storm_signal?'warn':'info', 'D'));
+  }
+  if (d.sar_difficulty) {
+    const sd = d.sar_difficulty;
+    derived.push(aliTile('SAR Difficulty', `${sd.difficulty}<small>/10</small>`,
+      `${sd.assessment} · survival ${sd.estimated_survival_time}`,
+      sd.difficulty>=7?'critical':(sd.difficulty>=4?'caution':'info'), 'D'));
+  }
+  if (d.dew_point) {
+    const dp = d.dew_point;
+    derived.push(aliTile('Dew Point', `${dp.dew_point_c}<small>°C</small>`,
+      `Spread ${dp.spread_c}°C · fog risk ${dp.fog_risk} · base ~${dp.estimated_cloud_base_ft}ft`,
+      dp.fog_risk==='high'?'warn':(dp.fog_risk==='moderate'?'caution':'ok'), 'D'));
+  }
+  if (d.wave_analysis || wave?.data) {
+    const wa = d.wave_analysis || wave.data;
+    derived.push(aliTile('Wave Analysis', `${wa.wave_height_m}<small>m / ${wa.wave_period_s}s</small>`,
+      `${wa.sea_type} · ${wa.breaking_risk} break · SST ${wa.sea_surface_temp_c}°C`,
+      wa.breaking_risk==='high'?'warn':(wa.breaking_risk==='moderate'?'caution':'info'), 'D'));
+  }
+  if (d.flood_risk) {
+    const fr = d.flood_risk;
+    derived.push(aliTile('Flood Risk', `${fr.overall_risk}<small>/10</small>`,
+      `${fr.risk_level} · 6h rain ${fr.precip_forecast_6h_mm}mm @ ${fr.avg_precip_probability_6h}%`,
+      fr.overall_risk>=7?'critical':(fr.overall_risk>=4?'warn':'ok'), 'D'));
+  }
+  if (storm?.data) {
+    const sr = storm.data;
+    derived.push(aliTile('Storm/River Forecast', sr.overall_status || '—',
+      sr.headline || '', sevFromSignal(sr.overall_status), 'D'));
+  }
+  if (catchment?.data?.snapshot) {
+    const cs = catchment.data.snapshot;
+    const totalCatch = Object.values(cs).reduce((a,b)=>a+(b.catchment_rain_mm_hr||0),0);
+    const activeCatchments = Object.keys(cs).length;
+    derived.push(aliTile('Catchment Response', `${totalCatch.toFixed(2)}<small>mm/hr</small>`,
+      `${activeCatchments} catchments · combined rain input`,
+      totalCatch>2?'warn':'info', 'D'));
+  }
+
+  document.getElementById('ali-derived-grid').innerHTML = derived.join('') || '<div class="ali-tile"><div class="ali-tile-label">No derived signals</div></div>';
+
+  // ── FACTUAL tiles (Siphon sources) ──
+  const factual = [];
+
+  // Met Office warnings
+  if (warnList.length >= 0) {
+    const ayrCount = warnList.filter(w=>w.affects_ayrshire).length;
+    factual.push(aliTile('Met Office Warnings', ayrCount>0?`${ayrCount} <small>active</small>`:'None',
+      ayrCount>0 ? (warnList.find(w=>w.affects_ayrshire)?.title||'') : 'Strathclyde clear',
+      ayrCount>0?'warn':'ok', 'F'));
+  }
+
+  // Flood warnings (UK)
+  if (floods) {
+    factual.push(aliTile('Flood Warnings (UK)', `${floods.total_warnings||0}`,
+      `${floods.severe||0} severe · ${floods.warnings||0} warn · ${floods.alerts||0} alert`,
+      floods.severe>0?'critical':(floods.warnings>0?'warn':'info'), 'F'));
+  }
+
+  // Rivers (Ayrshire)
+  if (rivers?.rivers) {
+    const rs = Object.values(rivers.rivers).filter(r=>r.current);
+    const rising = rs.filter(r=>r.trend==='rising').length;
+    const highest = rs.reduce((a,r)=> r.current && (!a || r.current.level_m > a.level)?{name:r.station.replace('River ','').replace(' at ',' @ '), level:r.current.level_m}:a, null);
+    factual.push(aliTile('Ayrshire Rivers', `${rs.length}<small> live</small>`,
+      highest ? `${highest.name} ${highest.level.toFixed(2)}m · ${rising} rising` : `${rising} rising`,
+      rising>1?'caution':'info', 'F'));
+  }
+
+  // Fuel prices
+  if (fuel && fuel.petrol_ppl) {
+    factual.push(aliTile('Fuel Prices (UK)', `${fuel.petrol_ppl}<small>p petrol</small>`,
+      `Diesel ${fuel.diesel_ppl}p · Δ ${fuel.petrol_change>0?'+':''}${fuel.petrol_change}p / ${fuel.diesel_change>0?'+':''}${fuel.diesel_change}p`,
+      fuel.petrol_change>2?'warn':(fuel.petrol_change<-2?'ok':'info'), 'F'));
+  }
+
+  // Grid carbon
+  if (grid?.grid?.intensity) {
+    const gi = grid.grid.intensity;
+    const windPct = grid.grid.generation_mix?.find(m=>m.fuel==='wind')?.perc ?? 0;
+    factual.push(aliTile('Grid Carbon', `${gi.actual}<small> gCO₂/kWh</small>`,
+      `${gi.index} · wind ${windPct}% of mix`,
+      gi.index==='very high'?'critical':(gi.index==='high'?'warn':(gi.index==='low'||gi.index==='very low'?'ok':'info')), 'F'));
+  }
+
+  // Moon
+  if (moon?.phase_name) {
+    factual.push(aliTile('Moon', `${moon.emoji||''} ${moon.illumination}<small>%</small>`,
+      `${moon.phase_name} · day ${(moon.phase_days||0).toFixed(1)}`, 'info', 'F'));
+  }
+
+  // UV
+  if (uv && uv.max_today != null) {
+    factual.push(aliTile('UV Index (today max)', `${uv.max_today}`,
+      `${uv.level} · tomorrow ${uv.forecast?.[1]?.uv_max ?? '—'}`,
+      uv.max_today>=8?'critical':(uv.max_today>=6?'warn':(uv.max_today>=3?'caution':'ok')), 'F'));
+  }
+
+  // Aurora
+  if (aurora?.status) {
+    factual.push(aliTile('Aurora', `${aurora.status.toUpperCase()}`,
+      `${aurora.description}${aurora.visible_scotland?' · VISIBLE':''}`,
+      aurora.visible_scotland?'warn':(aurora.status==='red'?'critical':'ok'), 'F'));
+  }
+
+  // Transport incidents
+  if (incidents) {
+    factual.push(aliTile('Road Incidents', `${incidents.count||0}`,
+      (incidents.incidents||[]).slice(0,1).map(i=>i.title||i.description||'').join('') || 'Ayrshire roads clear',
+      incidents.count>5?'warn':(incidents.count>0?'caution':'ok'), 'F'));
+  }
+
+  // News
+  factual.push(aliTile('Ayrshire News', `${news?.count ?? 0}`,
+    articles.length ? (articles[0].title||articles[0].headline||'').slice(0,70) : 'No fresh headlines', 'info', 'F'));
+
+  // Rainfall coverage (from sensors)
+  if (s.rain_gradient) {
+    const rg = s.rain_gradient;
+    factual.push(aliTile('Rain Gauges Wet', `${rg.wet_count}<small>/${rg.station_count}</small>`,
+      `${rg.heavy_count} heavy · driest: ${rg.driest_station||'—'}`,
+      rg.heavy_count>2?'warn':(rg.wet_count>rg.station_count*0.5?'caution':'info'), 'F'));
+  }
+
+  document.getElementById('ali-factual-grid').innerHTML = factual.join('') || '<div class="ali-tile"><div class="ali-tile-label">No factual signals</div></div>';
+}
+setInterval(loadAliDashboard, 120000); // refresh every 2 min
+document.addEventListener('DOMContentLoaded', loadAliDashboard);
+
+// ─── Regional live sensors (Prism) — legacy, hidden ─────────
+async function loadLocalSensors() {
+  try {
+    const r = await fetch("/api/local-sensors/ayrshire");
+    if (!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById("local-sensors");
+    const tiles = document.getElementById("sensor-tiles");
+    const counts = document.getElementById("sensor-counts");
+    if (!el || !tiles) return;
+    const s = d.signals || {};
+    const hasData = s.micro_wind || s.pressure_gradient || s.rain_gradient;
+    if (!hasData) { el.style.display = "none"; return; }
+    const sevColor = (sig) => {
+      if (!sig) return "#718096";
+      if (/squall|severe/.test(sig)) return "#c53030";
+      if (/strong|widespread_heavy/.test(sig)) return "#dd6b20";
+      if (/convergence|localised|moderate/.test(sig)) return "#3182ce";
+      return "#38a169";
+    };
+    const mk = (label, signal, desc) => signal
+      ? `<div style="background:#fff;border-radius:8px;padding:8px 10px;border-left:3px solid ${sevColor(signal.signal)}">`
+        + `<div style="font-size:10px;color:#a0aec0;text-transform:uppercase;letter-spacing:0.5px">${label}</div>`
+        + `<div style="font-size:12px;font-weight:600;color:#2d3748;margin:2px 0">${signal.descriptor || signal.signal}</div>`
+        + `<div style="font-size:10px;color:#718096">${desc}</div>`
+        + `</div>`
+      : "";
+    tiles.innerHTML = [
+      mk("Wind", s.micro_wind, s.micro_wind ? `${s.micro_wind.mean_speed_kt}kt mean · ${s.micro_wind.speed_spread_kt}kt spread` : ""),
+      mk("Pressure", s.pressure_gradient, s.pressure_gradient ? `${s.pressure_gradient.max_gradient_hpa_per_100km} hPa/100km · ~${s.pressure_gradient.geostrophic_wind_est_kt}kt geostrophic` : ""),
+      mk("Rain", s.rain_gradient, s.rain_gradient ? `${s.rain_gradient.coverage_pct}% coverage · max ${s.rain_gradient.max_3h_mm}mm/3h` : ""),
+    ].join("");
+    if (counts) counts.textContent = `${d.stations.aviation_count} airports · ${d.stations.rainfall_count} rain gauges`;
+    el.style.display = "block";
+  } catch(e) {}
+}
+setInterval(loadLocalSensors, 300000);
+document.addEventListener("DOMContentLoaded", loadLocalSensors);
+
+// ─── Init WispAyr ────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.WispAyr) WispAyr.init('weather');
+
+  // Add weather effects toggle next to theme toggle
+  const actions = document.querySelector('.w-header-actions');
+  if (actions) {
+    const themeBtn = actions.querySelector('.w-theme-toggle');
+    const fxBtn = document.createElement('button');
+    fxBtn.className = 'w-theme-toggle';
+    fxBtn.id = 'wFxToggle';
+    fxBtn.setAttribute('aria-label', 'Toggle weather effects');
+    fxBtn.title = 'Weather effects';
+    const fxOn = localStorage.getItem('wispayr-fx') !== 'off';
+    fxBtn.textContent = fxOn ? '✨' : '🚫';
+    fxBtn.style.fontSize = '14px';
+    if (!fxOn) document.documentElement.setAttribute('data-fx', 'off');
+    fxBtn.addEventListener('click', () => {
+      const isOff = document.documentElement.getAttribute('data-fx') === 'off';
+      if (isOff) {
+        document.documentElement.removeAttribute('data-fx');
+        localStorage.setItem('wispayr-fx', 'on');
+        fxBtn.textContent = '✨';
+        // Resume effects
+        if (window._resumeEffects) window._resumeEffects();
+      } else {
+        document.documentElement.setAttribute('data-fx', 'off');
+        localStorage.setItem('wispayr-fx', 'off');
+        fxBtn.textContent = '🚫';
+        // Pause effects
+        if (window._pauseEffects) window._pauseEffects();
+      }
+    });
+    actions.insertBefore(fxBtn, themeBtn);
+  }
+});
+
+// ─── WMO Weather Codes ──────────────────────────────────────
+const WMO_ICONS = {
+  0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',
+  51:'🌦️',53:'🌦️',55:'🌧️',56:'🌨️',57:'🌨️',
+  61:'🌧️',63:'🌧️',65:'🌧️',66:'🌨️',67:'🌨️',
+  71:'❄️',73:'❄️',75:'❄️',77:'🌨️',
+  80:'🌦️',81:'🌧️',82:'⛈️',85:'🌨️',86:'🌨️',
+  95:'⛈️',96:'⛈️',99:'⛈️'
+};
+const WMO_DESC = {
+  0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Fog',48:'Icy fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+  56:'Freezing drizzle',57:'Heavy freezing drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Heavy freezing rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
+  80:'Light showers',81:'Showers',82:'Violent showers',85:'Snow showers',86:'Heavy snow showers',
+  95:'Thunderstorm',96:'Thunderstorm w/ hail',99:'Heavy thunderstorm w/ hail'
+};
+const AQI_LEVELS = [
+  {max:20,label:'Good',color:'#22c55e',bg:'var(--w-bg-green)'},
+  {max:40,label:'Fair',color:'#84cc16',bg:'var(--w-bg-green)'},
+  {max:60,label:'Moderate',color:'#eab308',bg:'var(--w-bg-orange)'},
+  {max:80,label:'Poor',color:'#f97316',bg:'var(--w-bg-orange)'},
+  {max:100,label:'Very Poor',color:'#ef4444',bg:'var(--w-bg-red)'},
+  {max:999,label:'Extremely Poor',color:'#7c3aed',bg:'var(--w-bg-purple)'}
+];
+const WIND_DIRS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+const LOCATIONS = ['ayr','troon','prestwick','kilmarnock','irvine','largs','maybole','girvan','cumnock'];
+const LOCATION_NAMES = {ayr:'Ayr',troon:'Troon',prestwick:'Prestwick',kilmarnock:'Kilmarnock',irvine:'Irvine',largs:'Largs',maybole:'Maybole',girvan:'Girvan',cumnock:'Cumnock'};
+
+// ─── Helpers ────────────────────────────────────────────────
+const wmoIcon = c => WMO_ICONS[c] ?? '🌡️';
+const wmoDesc = c => WMO_DESC[c] ?? 'Unknown';
+const windDir = d => WIND_DIRS[Math.round(d / 22.5) % 16];
+const aqiLevel = v => AQI_LEVELS.find(l => v <= l.max) ?? AQI_LEVELS.at(-1);
+const fmt = (v, d=1) => v != null ? Number(v).toFixed(d) : '–';
+function fmtTime(iso) {
+  return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'});
+}
+function fmtHour(iso) {
+  const h = new Date(iso).getHours();
+  return h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
+}
+function dayName(ds) {
+  if (ds === new Date().toISOString().split('T')[0]) return 'Today';
+  const d = new Date(ds+'T12:00:00');
+  return d.toLocaleDateString('en-GB',{weekday:'short'});
+}
+function dateFmt(ds) {
+  const d = new Date(ds+'T12:00:00');
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+
+// ─── State ──────────────────────────────────────────────────
+let currentLocation = 'ayr';
+let weatherCache = {};
+let radarMap = null;
+let radarLayer = null;
+let radarTimestamps = [];
+let radarIdx = 0;
+let radarPlaying = true;
+let radarInterval = null;
+let autoRefreshTimer = null;
+
+// ─── Tabs ───────────────────────────────────────────────────
+document.querySelectorAll('.aw-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.aw-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.aw-tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'radar') setTimeout(initRadarMap, 100);
+    if (tab.dataset.tab === 'overview') loadAllLocations();
+  });
+});
+
+// ─── Location pills ─────────────────────────────────────────
+function renderLocationBar() {
+  const bar = document.getElementById('location-bar');
+  bar.innerHTML = `
+    <label>📍 Location</label>
+    <div class="aw-location-pills">
+      ${LOCATIONS.map(k => `<button class="aw-location-pill${k===currentLocation?' active':''}" data-loc="${k}">${LOCATION_NAMES[k]}</button>`).join('')}
+    </div>
+    <span class="aw-refresh-info" id="refresh-info">Auto-refreshes every 5 min</span>
+  `;
+  bar.querySelectorAll('.aw-location-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      currentLocation = pill.dataset.loc;
+      bar.querySelectorAll('.aw-location-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      loadWeather();
+    });
+  });
+}
+
+// ─── Load Weather ───────────────────────────────────────────
+async function loadWeather(loc) {
+  loc = loc || currentLocation;
+  const target = document.getElementById('forecast-content');
+  try {
+    const res = await fetch(`/api/weather/${loc}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    weatherCache[loc] = data;
+    if (loc === currentLocation) {
+      renderForecast(data);
+      const info = document.getElementById('refresh-info');
+      if (info) info.textContent = `Updated ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · Auto-refreshes every 5 min`;
+    }
+  } catch(e) {
+    if (loc === currentLocation) {
+      target.innerHTML = `<div class="aw-error">⚠️ Failed to load weather: ${e.message}</div>`;
+    }
+  }
+}
+
+// ─── Load Extra Data (Rivers, Moon, Aurora, ISS, Floods) ────
+let issInterval = null;
+
+async function loadExtras() {
+  const section = document.getElementById('extras-section');
+  if (!section) return;
+
+  // Clear any existing ISS refresh interval
+  if (issInterval) { clearInterval(issInterval); issInterval = null; }
+
+  // Fetch all extra endpoints in parallel
+  const [riversRes, moonRes, auroraRes, floodsRes, uvRes, fuelRes, aviationRes, spaceRes, fxRes] = await Promise.allSettled([
+    fetch('/api/rivers').then(r => r.ok ? r.json() : null),
+    fetch('/api/moon').then(r => r.ok ? r.json() : null),
+    fetch('/api/aurora').then(r => r.ok ? r.json() : null),
+    fetch('/api/floods').then(r => r.ok ? r.json() : null),
+    fetch('/api/uv').then(r => r.ok ? r.json() : null),
+    fetch('/api/fuel').then(r => r.ok ? r.json() : null),
+    fetch('/api/aviation').then(r => r.ok ? r.json() : null),
+    fetch('/api/space').then(r => r.ok ? r.json() : null),
+    fetch('/api/finance/fx').then(r => r.ok ? r.json() : null)
+  ]);
+
+  const rivers = riversRes.status === 'fulfilled' ? riversRes.value : null;
+  const moon = moonRes.status === 'fulfilled' ? moonRes.value : null;
+  const aurora = auroraRes.status === 'fulfilled' ? auroraRes.value : null;
+  const floods = floodsRes.status === 'fulfilled' ? floodsRes.value : null;
+  const uv = uvRes.status === 'fulfilled' ? uvRes.value : null;
+  const fuel = fuelRes.status === 'fulfilled' ? fuelRes.value : null;
+  const aviation = aviationRes.status === 'fulfilled' ? aviationRes.value : null;
+  const space = spaceRes.status === 'fulfilled' ? spaceRes.value : null;
+  const fx = fxRes.status === 'fulfilled' ? fxRes.value : null;
+
+  // Insert quick stats bar after hero section
+  const quickStatsHtml = renderQuickStats({ fuel, fx, aviation, space, floods });
+  const existingStats = document.getElementById('quick-stats-bar');
+  if (existingStats) existingStats.outerHTML = quickStatsHtml ? `<div id="quick-stats-bar">${quickStatsHtml}</div>` : '';
+  else {
+    const heroEl = document.querySelector('.aw-hero');
+    if (heroEl && quickStatsHtml) heroEl.insertAdjacentHTML('afterend', `<div id="quick-stats-bar">${quickStatsHtml}</div>`);
+  }
+
+  const riversHtml = renderRivers(rivers);
+  const skyHtml = renderSkyWatch(moon, aurora, uv);
+  const floodsHtml = renderFloodWarnings(floods);
+
+  section.innerHTML = `
+    <div class="aw-two-col aw-section">
+      ${riversHtml || '<div></div>'}
+      ${skyHtml || '<div></div>'}
+    </div>
+    ${floodsHtml}
+  `;
+
+  // Fetch ISS immediately, then every 30 seconds
+  updateISS();
+  issInterval = setInterval(updateISS, 30000);
+}
+
+async function updateISS() {
+  try {
+    const res = await fetch('/api/iss');
+    if (!res.ok) return;
+    const data = await res.json();
+    const latEl = document.getElementById('iss-lat');
+    const lonEl = document.getElementById('iss-lon');
+    const updEl = document.getElementById('iss-updated');
+    if (latEl) latEl.textContent = data.latitude != null ? data.latitude.toFixed(4) + '°' : '–';
+    if (lonEl) lonEl.textContent = data.longitude != null ? data.longitude.toFixed(4) + '°' : '–';
+    if (updEl) updEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'}) + ' · Refreshes every 30s';
+  } catch(e) {
+    const updEl = document.getElementById('iss-updated');
+    if (updEl) updEl.textContent = 'Failed to fetch ISS position';
+  }
+}
+
+// ─── Render Forecast ────────────────────────────────────────
+function renderForecast(data) {
+  const target = document.getElementById('forecast-content');
+  const f = data.forecast;
+  const m = data.marine;
+  const aq = data.air_quality;
+  const cur = f?.current ?? {};
+  const hourly = f?.hourly ?? {};
+  const daily = f?.daily ?? {};
+
+  target.innerHTML = `
+    ${renderHero(data.location, cur, daily)}
+    ${renderHourly(hourly)}
+    ${renderDaily(daily)}
+    <div class="aw-two-col aw-section">
+      ${renderSea(m)}
+      ${renderAQI(aq)}
+    </div>
+    <div id="prism-section" class="aw-section"></div>
+    <div id="extras-section"></div>
+  `;
+  loadPrismIntelligence(currentLocation);
+
+  // Init 3D ocean after DOM is populated
+  requestAnimationFrame(() => initOceanVis({ marine: m?.current, weather: cur }));
+
+  // Load extra data cards (rivers, sky watch, floods)
+  loadExtras();
+}
+
+function renderHero(loc, cur, daily) {
+  const code = cur.weather_code;
+  const sunrise = daily?.sunrise?.[0];
+  const sunset = daily?.sunset?.[0];
+  const tMax = daily?.temperature_2m_max?.[0];
+  const tMin = daily?.temperature_2m_min?.[0];
+
+  return `
+  <div class="aw-hero aw-section">
+    <div class="aw-hero-canvas" id="hero-ocean"></div>
+    <div class="aw-hero-top">
+      <div>
+        <div class="aw-hero-location">📍 Ayrshire, Scotland</div>
+        <div class="aw-hero-name">${loc.name} ${wmoIcon(code)}</div>
+        <div class="aw-hero-temp">${fmt(cur.temperature_2m,0)}<small>°C</small></div>
+        <div class="aw-hero-desc">${wmoDesc(code)}</div>
+        <div class="aw-hero-feels">Feels like ${fmt(cur.apparent_temperature,0)}°C${tMax!=null?` · High ${fmt(tMax,0)}° / Low ${fmt(tMin,0)}°`:''}</div>
+        ${sunrise ? `<div class="aw-sun-pills"><span class="aw-sun-pill">🌅 ${fmtTime(sunrise)}</span><span class="aw-sun-pill">🌇 ${fmtTime(sunset)}</span></div>` : ''}
+      </div>
+      <div class="aw-hero-stats">
+        <div class="aw-hero-stat">
+          <div class="aw-hero-stat-label">Wind</div>
+          <div class="aw-hero-stat-value">${fmt(cur.wind_speed_10m,0)} <small>mph</small></div>
+          <div class="aw-hero-stat-sub">${windDir(cur.wind_direction_10m)} · Gusts ${fmt(cur.wind_gusts_10m,0)}</div>
+        </div>
+        <div class="aw-hero-stat">
+          <div class="aw-hero-stat-label">Humidity</div>
+          <div class="aw-hero-stat-value">${fmt(cur.relative_humidity_2m,0)}<small>%</small></div>
+        </div>
+        <div class="aw-hero-stat">
+          <div class="aw-hero-stat-label">Pressure</div>
+          <div class="aw-hero-stat-value">${fmt(cur.surface_pressure,0)} <small>hPa</small></div>
+        </div>
+        <div class="aw-hero-stat">
+          <div class="aw-hero-stat-label">Visibility</div>
+          <div class="aw-hero-stat-value">${cur.visibility?fmt(cur.visibility/1000,1):'–'} <small>km</small></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderHourly(hourly) {
+  if (!hourly.time?.length) return '';
+  const now = Date.now();
+  const items = hourly.time.slice(0,48).map((t,i) => {
+    const dt = new Date(t);
+    const isNow = Math.abs(dt - now) < 1800000;
+    const precip = hourly.precipitation_probability?.[i];
+    return `
+    <div class="aw-hourly-item${isNow?' now':''}">
+      <div class="aw-hourly-time">${isNow?'Now':fmtHour(t)}</div>
+      <div class="aw-hourly-icon">${wmoIcon(hourly.weather_code?.[i])}</div>
+      <div class="aw-hourly-temp">${fmt(hourly.temperature_2m?.[i],0)}°</div>
+      ${precip>5?`<div class="aw-hourly-precip">💧${precip}%</div>`:'<div class="aw-hourly-precip" style="visibility:hidden">-</div>'}
+      <div class="aw-hourly-wind">${fmt(hourly.wind_speed_10m?.[i],0)} mph</div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="w-card aw-section">
+    <div class="aw-section-title"><span class="aw-icon">🕐</span> 48-Hour Forecast</div>
+    <div class="aw-hourly-scroll">${items}</div>
+  </div>`;
+}
+
+function renderDaily(daily) {
+  if (!daily.time?.length) return '';
+  const items = daily.time.map((t,i) => `
+    <div class="aw-daily-item">
+      <div class="aw-daily-day">${dayName(t)}</div>
+      <div class="aw-daily-date">${dateFmt(t)}</div>
+      <div class="aw-daily-icon">${wmoIcon(daily.weather_code?.[i])}</div>
+      <div class="aw-daily-temps">
+        <span class="aw-daily-high">${fmt(daily.temperature_2m_max?.[i],0)}°</span>
+        <span class="aw-daily-low">${fmt(daily.temperature_2m_min?.[i],0)}°</span>
+      </div>
+      ${(daily.precipitation_probability_max?.[i]??0)>5?`<div class="aw-daily-precip">💧${daily.precipitation_probability_max[i]}%</div>`:''}
+      ${daily.uv_index_max?.[i]>0?`<div class="aw-daily-uv">☀️ UV ${fmt(daily.uv_index_max[i],0)}</div>`:''}
+    </div>`
+  ).join('');
+
+  return `
+  <div class="w-card aw-section">
+    <div class="aw-section-title"><span class="aw-icon">📅</span> 7-Day Forecast</div>
+    <div class="aw-daily-grid">${items}</div>
+  </div>`;
+}
+
+function renderSea(marine) {
+  const cur = marine?.current ?? {};
+  return `
+  <div class="w-card">
+    <div class="aw-section-title"><span class="aw-icon">🌊</span> Firth of Clyde</div>
+    <div class="aw-ocean-wrap" id="ocean-container">
+      <div class="aw-ocean-overlay">
+        <div>
+          <div class="aw-ocean-label">Wave Height</div>
+          <div class="aw-ocean-val">${fmt(cur.wave_height)}<span>m</span></div>
+        </div>
+        <div style="text-align:center">
+          <div class="aw-ocean-label">Period</div>
+          <div class="aw-ocean-val">${fmt(cur.wave_period)}<span>s</span></div>
+        </div>
+        <div style="text-align:right">
+          <div class="aw-ocean-label">Sea Temp</div>
+          <div class="aw-ocean-val">${fmt(cur.sea_surface_temperature)}<span>°C</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="aw-sea-grid">
+      <div class="aw-sea-stat">
+        <div class="aw-sea-icon">🌊</div>
+        <div class="aw-sea-label">Wave Height</div>
+        <div class="aw-sea-value" style="color:var(--w-cyan)">${fmt(cur.wave_height)}<span class="aw-sea-unit">m</span></div>
+      </div>
+      <div class="aw-sea-stat">
+        <div class="aw-sea-icon">⏱️</div>
+        <div class="aw-sea-label">Wave Period</div>
+        <div class="aw-sea-value">${fmt(cur.wave_period)}<span class="aw-sea-unit">s</span></div>
+      </div>
+      <div class="aw-sea-stat">
+        <div class="aw-sea-icon">🌡️</div>
+        <div class="aw-sea-label">Sea Temp</div>
+        <div class="aw-sea-value" style="color:var(--w-purple)">${fmt(cur.sea_surface_temperature)}<span class="aw-sea-unit">°C</span></div>
+      </div>
+      <div class="aw-sea-stat">
+        <div class="aw-sea-icon">💨</div>
+        <div class="aw-sea-label">Wind Wave</div>
+        <div class="aw-sea-value">${fmt(cur.wind_wave_height)}<span class="aw-sea-unit">m</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─── Prism Derived Intelligence ─────────────────────────────
+const PRISM_BASE = 'https://artemis.wispayr.online/api';
+let _prismData = {};
+
+async function loadPrismIntelligence(loc) {
+  const target = document.getElementById('prism-section');
+  if (!target) return;
+  target.innerHTML = `<div class="w-card"><div class="aw-section-title"><span class="aw-icon">🔬</span> Prism Intelligence</div><p class="w-text-muted">Loading derived insights...</p></div>`;
+
+  try {
+    const [beaufort, risk, pressure, fog, sar, waves, storm, airquality, rivers] = await Promise.all([
+      fetch(`${PRISM_BASE}/beaufort/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/maritime-risk/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/pressure-tendency/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/dew-point/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/sar-difficulty/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/wave-analysis`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/storm-forecast/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/air-quality/${loc}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${PRISM_BASE}/rivers`).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    _prismData = { beaufort, risk, pressure, fog, sar, waves, storm, airquality, rivers, location: loc };
+
+    // Build cards grouped by domain
+    const atmosphere = []; // storm, pressure, fog
+    const maritime = [];   // maritime risk, beaufort, waves, SAR
+    const environment = []; // air quality
+    const rivers_cards = []; // rivers, flood
+
+    // --- Atmosphere & Weather ---
+    if (storm?.data) {
+      const d = storm.data;
+      if (d.in_storm) {
+        const stormClass = d.trajectory === 'intensifying' ? 'risk-high' : d.trajectory === 'ending_soon' ? 'risk-low' : 'storm';
+        const trajEmoji = d.trajectory === 'intensifying' ? '⬆️' : d.trajectory === 'ending_soon' ? '⬇️' : d.trajectory === 'improving' ? '↘️' : '➡️';
+        atmosphere.push(`
+          <div class="aw-prism-card ${stormClass}" onclick="showPrismDetail('storm')">
+            <div class="aw-prism-label">⛈️ Storm Forecast</div>
+            <div class="aw-prism-value">${d.label}</div>
+            <div class="aw-prism-sub">${trajEmoji} ${d.trajectory.replace(/_/g,' ')}</div>
+            ${d.ending_at ? `<div class="aw-prism-meta">Conditions ease around ${new Date(d.ending_at).toLocaleString('en-GB',{weekday:'short', hour:'2-digit', minute:'2-digit'})}</div>` : ''}
+          </div>`);
+      } else if (d.storm_approaching) {
+        atmosphere.push(`
+          <div class="aw-prism-card storm" onclick="showPrismDetail('storm')">
+            <div class="aw-prism-label">⛈️ Storm Forecast</div>
+            <div class="aw-prism-value">Incoming</div>
+            <div class="aw-prism-sub">${d.label}</div>
+            <div class="aw-prism-meta">Expected ${new Date(d.onset_time).toLocaleString('en-GB',{weekday:'short', hour:'2-digit', minute:'2-digit'})}</div>
+          </div>`);
+      }
+    }
+
+    if (pressure?.data) {
+      const d = pressure.data;
+      const stormClass = d.storm_signal ? 'storm' : '';
+      atmosphere.push(`
+        <div class="aw-prism-card ${stormClass}" onclick="showPrismDetail('pressure')">
+          <div class="aw-prism-label">📊 Pressure Trend</div>
+          <div class="aw-prism-value">${d.arrow} ${d.current_hpa}<span style="font-size:12px;color:var(--w-text-light);margin-left:4px">hPa</span></div>
+          <div class="aw-prism-sub"><strong>${d.descriptor}</strong> (${d.rate_hpa_3h > 0 ? '+' : ''}${d.rate_hpa_3h} hPa/3h)</div>
+          ${d.storm_signal ? `<div class="aw-prism-meta" style="color:#a855f7">⚠️ Storm signal</div>` : ''}
+        </div>`);
+    }
+
+    if (fog?.data) {
+      const d = fog.data;
+      atmosphere.push(`
+        <div class="aw-prism-card risk-${d.fog_risk === 'negligible' ? 'low' : d.fog_risk}" onclick="showPrismDetail('fog')">
+          <div class="aw-prism-label">🌫️ Fog Risk</div>
+          <div class="aw-prism-value" style="text-transform:capitalize">${d.fog_risk}</div>
+          <div class="aw-prism-sub">Dew point ${d.dew_point_c}°C · Spread ${d.spread_c}°C</div>
+          <div class="aw-prism-meta">Est. cloud base: ${d.estimated_cloud_base_m}m</div>
+        </div>`);
+    }
+
+    // --- Maritime ---
+    if (risk?.data) {
+      const d = risk.data;
+      maritime.push(`
+        <div class="aw-prism-card risk-${d.risk_level}" onclick="showPrismDetail('risk')">
+          <div class="aw-prism-label">🌊 Maritime Risk</div>
+          <div class="aw-prism-value">${d.score}/10<span class="aw-prism-badge ${d.risk_level}">${d.risk_level}</span></div>
+          <div class="aw-prism-sub">${d.recommendation}</div>
+          ${d.factors?.length ? `<div class="aw-prism-meta">${d.factors.slice(0,2).join(' · ')}</div>` : ''}
+        </div>`);
+    }
+
+    if (beaufort?.data) {
+      const d = beaufort.data;
+      maritime.push(`
+        <div class="aw-prism-card" onclick="showPrismDetail('beaufort')">
+          <div class="aw-prism-label">💨 Sea State</div>
+          <div class="aw-prism-value">F${d.beaufort_number}</div>
+          <div class="aw-prism-sub"><strong>${d.description}</strong></div>
+          <div class="aw-prism-meta">${d.sea_state}</div>
+        </div>`);
+    }
+
+    if (waves?.data) {
+      const d = waves.data;
+      maritime.push(`
+        <div class="aw-prism-card" onclick="showPrismDetail('waves')">
+          <div class="aw-prism-label">🌊 Wave Analysis</div>
+          <div class="aw-prism-value">${d.wave_height_m}<span style="font-size:12px;color:var(--w-text-light)">m</span> / ${d.wave_period_s}<span style="font-size:12px;color:var(--w-text-light)">s</span></div>
+          <div class="aw-prism-sub"><strong>${d.sea_type}</strong></div>
+          <div class="aw-prism-meta">Breaking risk: ${d.breaking_risk} · ${d.trend}</div>
+        </div>`);
+    }
+
+    if (sar?.data) {
+      const d = sar.data;
+      const riskClass = d.difficulty >= 7 ? 'high' : d.difficulty >= 4 ? 'moderate' : 'low';
+      maritime.push(`
+        <div class="aw-prism-card risk-${riskClass}" onclick="showPrismDetail('sar')">
+          <div class="aw-prism-label">🚁 SAR Difficulty</div>
+          <div class="aw-prism-value">${d.difficulty}/10</div>
+          <div class="aw-prism-sub">${d.assessment}</div>
+          <div class="aw-prism-meta">${d.is_dark ? '🌙 Night ops' : `☀️ ${d.daylight_remaining_h}h daylight`}</div>
+        </div>`);
+    }
+
+    // --- Environment ---
+    if (airquality?.data) {
+      const d = airquality.data;
+      const aqiRisk = d.european_aqi == null ? 'low' : d.european_aqi < 40 ? 'low' : d.european_aqi < 60 ? 'moderate' : d.european_aqi < 80 ? 'high' : 'extreme';
+      const dom = d.dominant_pollutant;
+      environment.push(`
+        <div class="aw-prism-card risk-${aqiRisk}" onclick="showPrismDetail('airquality')">
+          <div class="aw-prism-label">🫁 Air Quality</div>
+          <div class="aw-prism-value">AQI ${d.european_aqi} <span class="aw-prism-badge ${aqiRisk}" style="background:${d.band.color}22;color:${d.band.color}">${d.band.label}</span></div>
+          <div class="aw-prism-sub">${d.summary}</div>
+          ${dom ? `<div class="aw-prism-meta">Dominant: ${dom.name} (${(dom.who_ratio*100).toFixed(0)}% of WHO)</div>` : ''}
+        </div>`);
+    }
+
+    // --- Rivers ---
+    if (rivers?.data) {
+      const d = rivers.data;
+      const riverRisk = d.overall_status === 'action' ? 'extreme' : d.overall_status === 'watch' ? 'high' : d.overall_status === 'elevated' ? 'moderate' : 'low';
+      rivers_cards.push(`
+        <div class="aw-prism-card risk-${riverRisk}" onclick="showPrismDetail('rivers')">
+          <div class="aw-prism-label">🏞️ Ayrshire Rivers</div>
+          <div class="aw-prism-value" style="font-size:18px">${d.overall_label}</div>
+          <div class="aw-prism-sub">${d.station_count} stations monitored${d.rising_count ? ` · ${d.rising_count} rising` : ''}</div>
+          <div class="aw-prism-meta">${d.stations.slice(0,2).map(s => `${s.river}: ${s.level_m}m ${s.trend_arrow}`).join(' · ')}</div>
+        </div>`);
+    }
+
+    const section = (title, icon, cards) => cards.length ? `
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:var(--w-text-muted);margin-bottom:10px">${icon} ${title}</div>
+        <div class="aw-prism-grid">${cards.join('')}</div>
+      </div>` : '';
+
+    const total = atmosphere.length + maritime.length + environment.length + rivers_cards.length;
+    if (total === 0) {
+      target.innerHTML = `<div class="w-card"><div class="aw-section-title"><span class="aw-icon">🔬</span> Prism Intelligence</div><p class="w-text-muted">No derived data available for ${loc}</p></div>`;
+      return;
+    }
+
+    target.innerHTML = `
+      <div class="w-card">
+        <div class="aw-section-title"><span class="aw-icon">🔬</span> Prism Derived Intelligence</div>
+        ${section('Atmosphere & Weather', '🌤️', atmosphere)}
+        ${section('Maritime', '⚓', maritime)}
+        ${section('Environment', '🌍', environment)}
+        ${section('Rivers & Flood', '🏞️', rivers_cards)}
+        <div class="aw-prism-footer">
+          Tap any tile for detail · Raw data from siphon → derived by <a href="https://artemis.wispayr.online/" target="_blank">Prism</a> lenses
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.debug('Prism load failed:', e);
+    target.innerHTML = '';
+  }
+}
+
+// ─── Drilldown Modal ────────────────────────────────────────
+window.showPrismDetail = function(key) {
+  const d = _prismData[key]?.data;
+  if (!d) return;
+  const modal = document.getElementById('prism-modal') || (() => {
+    const m = document.createElement('div');
+    m.id = 'prism-modal';
+    m.className = 'aw-prism-modal';
+    m.innerHTML = '<div class="aw-prism-modal-backdrop" onclick="closePrismDetail()"></div><div class="aw-prism-modal-body"><button class="aw-prism-modal-close" onclick="closePrismDetail()">✕</button><div id="prism-modal-content"></div></div>';
+    document.body.appendChild(m);
+    return m;
+  })();
+
+  let html = '';
+  if (key === 'storm') html = renderStormDetail(d);
+  else if (key === 'pressure') html = renderPressureDetail(d);
+  else if (key === 'fog') html = renderFogDetail(d);
+  else if (key === 'risk') html = renderRiskDetail(d);
+  else if (key === 'beaufort') html = renderBeaufortDetail(d);
+  else if (key === 'waves') html = renderWavesDetail(d);
+  else if (key === 'sar') html = renderSarDetail(d);
+  else if (key === 'airquality') html = renderAirQualityDetail(d);
+  else if (key === 'rivers') html = renderRiversDetail(d);
+  else html = '<pre style="font-size:11px;overflow:auto">' + JSON.stringify(d, null, 2) + '</pre>';
+
+  document.getElementById('prism-modal-content').innerHTML = html;
+  modal.classList.add('open');
+};
+
+window.closePrismDetail = function() {
+  const m = document.getElementById('prism-modal');
+  if (m) m.classList.remove('open');
+};
+
+// Drilldown renderers
+function renderStormDetail(d) {
+  if (!d.in_storm && !d.storm_approaching) return '<h2>No storm activity</h2><p>Calm conditions forecast for next 48h.</p>';
+  return `
+    <h2>⛈️ Storm Forecast — ${d.location || ''}</h2>
+    ${d.in_storm ? `
+      <div style="font-size:28px;font-weight:800;margin:16px 0">${d.label}</div>
+      <table class="aw-prism-table">
+        <tr><td>Currently</td><td><strong>${d.current.wind_mph}mph sustained · ${d.current.gusts_mph}mph gusts</strong></td></tr>
+        <tr><td>Pressure</td><td><strong>${d.current.pressure_hpa} hPa</strong></td></tr>
+        <tr><td>Trajectory</td><td><strong>${d.trajectory.replace(/_/g,' ')}</strong></td></tr>
+        ${d.ending_at ? `<tr><td>Easing around</td><td><strong>${new Date(d.ending_at).toLocaleString('en-GB')}</strong></td></tr>` : ''}
+        ${d.hours_remaining != null ? `<tr><td>Hours remaining</td><td><strong>${d.hours_remaining}h</strong></td></tr>` : ''}
+        ${d.wind_recovers_h != null ? `<tr><td>Wind recovers in</td><td>${d.wind_recovers_h}h</td></tr>` : ''}
+        ${d.pressure_recovers_h != null ? `<tr><td>Pressure recovers in</td><td>${d.pressure_recovers_h}h</td></tr>` : ''}
+        ${d.peak ? `<tr><td>Peak gusts forecast</td><td><strong>${d.peak.gust_mph}mph</strong>${d.peak.hours_until ? ` in ${d.peak.hours_until}h` : ''}</td></tr>` : ''}
+      </table>
+      <p class="aw-prism-sub">Computed by scanning the 48h hourly forecast for the transition points where sustained wind drops below gale (25mph), gusts below storm threshold (45mph), and pressure recovers above 1005 hPa.</p>` :
+      `<div style="font-size:28px;font-weight:800;margin:16px 0">${d.label}</div>
+      <p>Expected onset: ${new Date(d.onset_time).toLocaleString('en-GB')}</p>`
+    }
+  `;
+}
+
+function renderPressureDetail(d) {
+  return `
+    <h2>📊 Pressure Tendency — ${d.location}</h2>
+    <div style="font-size:36px;font-weight:800;margin:16px 0">${d.arrow} ${d.current_hpa} hPa</div>
+    <table class="aw-prism-table">
+      <tr><td>Tendency</td><td><strong>${d.descriptor}</strong></td></tr>
+      <tr><td>3-hour rate</td><td><strong>${d.rate_hpa_3h > 0 ? '+' : ''}${d.rate_hpa_3h} hPa</strong></td></tr>
+      <tr><td>Storm signal</td><td><strong>${d.storm_signal ? '⚠️ Active' : 'No'}</strong></td></tr>
+    </table>
+    <h3>What this means</h3>
+    <p><strong>Normal pressure:</strong> ~1013 hPa at sea level.</p>
+    <p><strong>Storm-level:</strong> Below 1000 hPa indicates a deep low-pressure system. Below 980 hPa is a severe storm.</p>
+    <p><strong>Falling rapidly (>3 hPa/3h):</strong> Low pressure approaching fast — storm signal. Falling very rapidly (>6 hPa/3h) precedes the most intense weather.</p>
+    <p><strong>Rising rapidly:</strong> High pressure building in. Typically marks the end of a storm.</p>
+  `;
+}
+
+function renderFogDetail(d) {
+  return `
+    <h2>🌫️ Fog Risk & Cloud Base — ${d.location}</h2>
+    <div style="font-size:36px;font-weight:800;margin:16px 0;text-transform:capitalize">${d.fog_risk}</div>
+    <table class="aw-prism-table">
+      <tr><td>Temperature</td><td><strong>${d.temperature_c}°C</strong></td></tr>
+      <tr><td>Humidity</td><td><strong>${d.humidity_pct}%</strong></td></tr>
+      <tr><td>Dew point</td><td><strong>${d.dew_point_c}°C</strong></td></tr>
+      <tr><td>Temp-dew spread</td><td><strong>${d.spread_c}°C</strong></td></tr>
+      <tr><td>Visibility</td><td><strong>${(d.visibility_m/1000).toFixed(1)} km</strong></td></tr>
+      <tr><td>Est. cloud base</td><td><strong>${d.estimated_cloud_base_m}m (${d.estimated_cloud_base_ft}ft)</strong></td></tr>
+    </table>
+    <h3>How it's calculated</h3>
+    <p>The <strong>dew point</strong> is the temperature at which air becomes saturated. When temperature cools to the dew point, water condenses and fog forms.</p>
+    <p><strong>Spread &lt; 2.5°C:</strong> High fog risk. <strong>&lt; 4°C:</strong> Moderate. <strong>&lt; 6°C:</strong> Low.</p>
+    <p><strong>Cloud base:</strong> Rule of thumb — spread × 400ft ≈ height of cloud base above surface.</p>
+  `;
+}
+
+function renderRiskDetail(d) {
+  return `
+    <h2>🌊 Maritime Risk — ${d.location}</h2>
+    <div style="font-size:42px;font-weight:800;margin:16px 0">${d.score}/10 <span class="aw-prism-badge ${d.risk_level}">${d.risk_level}</span></div>
+    <p style="font-size:15px">${d.recommendation}</p>
+    <h3>Contributing factors</h3>
+    <ul>${d.factors.map(f => `<li>${f}</li>`).join('')}</ul>
+    <table class="aw-prism-table" style="margin-top:16px">
+      <tr><td>Wind</td><td><strong>${d.wind_mph}mph · gusts ${d.gusts_mph}mph</strong></td></tr>
+      <tr><td>Wave height</td><td><strong>${d.wave_height_m}m</strong></td></tr>
+      <tr><td>Pressure</td><td><strong>${d.pressure_hpa} hPa</strong></td></tr>
+      <tr><td>Visibility</td><td><strong>${(d.visibility_m/1000).toFixed(1)} km</strong></td></tr>
+    </table>
+    <h3>Scoring method</h3>
+    <p>Composite 0-10 score combining effective wind (blending sustained + gust average), absolute pressure as storm indicator, wave height, visibility, and active weather warnings.</p>
+  `;
+}
+
+function renderBeaufortDetail(d) {
+  return `
+    <h2>💨 Beaufort Scale — ${d.location}</h2>
+    <div style="font-size:48px;font-weight:800;margin:16px 0">Force ${d.beaufort_number}</div>
+    <div style="font-size:20px;font-weight:700">${d.description}</div>
+    <p style="font-size:15px;color:var(--w-text-light);margin-top:8px">${d.sea_state}</p>
+    <table class="aw-prism-table">
+      <tr><td>Wind speed</td><td><strong>${d.wind_speed_mph}mph</strong></td></tr>
+      <tr><td>Gust speed</td><td><strong>${d.wind_gusts_mph}mph</strong> (F${d.gust_beaufort})</td></tr>
+      <tr><td>Expected wave height</td><td><strong>${d.wave_height_range}</strong></td></tr>
+    </table>
+    <h3>Beaufort scale context</h3>
+    <p><strong>F0-F3:</strong> Calm to light breeze — safe for all vessels.</p>
+    <p><strong>F4-F5:</strong> Moderate to fresh breeze — comfortable sailing.</p>
+    <p><strong>F6-F7:</strong> Strong breeze to near gale — small craft should take shelter.</p>
+    <p><strong>F8-F9:</strong> Gale to strong gale — all but large vessels head in.</p>
+    <p><strong>F10+:</strong> Storm conditions — extreme danger.</p>
+  `;
+}
+
+function renderWavesDetail(d) {
+  return `
+    <h2>🌊 Wave Analysis — Firth of Clyde</h2>
+    <div style="font-size:36px;font-weight:800;margin:16px 0">${d.wave_height_m}m / ${d.wave_period_s}s</div>
+    <div style="font-size:18px;font-weight:700">${d.sea_type}</div>
+    <table class="aw-prism-table">
+      <tr><td>Wave height</td><td><strong>${d.wave_height_m}m</strong></td></tr>
+      <tr><td>Wave period</td><td><strong>${d.wave_period_s}s</strong></td></tr>
+      <tr><td>Wind-wave height</td><td><strong>${d.wind_wave_height_m}m</strong></td></tr>
+      <tr><td>Swell component</td><td><strong>${d.swell_component_m}m (${(d.swell_ratio*100).toFixed(0)}%)</strong></td></tr>
+      <tr><td>Wavelength</td><td><strong>${d.wavelength_m}m</strong></td></tr>
+      <tr><td>Steepness</td><td><strong>${d.steepness}</strong></td></tr>
+      <tr><td>Breaking risk</td><td><strong style="text-transform:capitalize">${d.breaking_risk}</strong></td></tr>
+      <tr><td>Trend (next 6h)</td><td><strong style="text-transform:capitalize">${d.trend}</strong></td></tr>
+      <tr><td>Sea surface temp</td><td><strong>${d.sea_surface_temp_c}°C</strong></td></tr>
+    </table>
+    <h3>What these mean</h3>
+    <p><strong>Swell:</strong> Long-period waves travelling from distant storms. Smooth rolling motion.</p>
+    <p><strong>Wind-sea:</strong> Short-period chop generated by local wind. Irregular and breaking.</p>
+    <p><strong>Steepness (H/L):</strong> Ratio of wave height to wavelength. Waves break when steepness exceeds ~1/7 (0.143).</p>
+  `;
+}
+
+function renderSarDetail(d) {
+  return `
+    <h2>🚁 SAR Difficulty — ${d.location}</h2>
+    <div style="font-size:42px;font-weight:800;margin:16px 0">${d.difficulty}/10</div>
+    <p style="font-size:15px">${d.assessment}</p>
+    <h3>Contributing factors</h3>
+    <ul>${(d.factors || []).map(f => `<li>${f}</li>`).join('')}</ul>
+    <table class="aw-prism-table" style="margin-top:16px">
+      <tr><td>Limiting factor</td><td><strong style="text-transform:capitalize">${d.limiting_factor}</strong></td></tr>
+      <tr><td>Daylight</td><td><strong>${d.is_dark ? '🌙 Night operations' : `☀️ ${d.daylight_remaining_h}h remaining`}</strong></td></tr>
+      <tr><td>Sea temperature</td><td><strong>${d.sea_temp_c}°C</strong></td></tr>
+      <tr><td>Estimated survival time</td><td><strong>${d.estimated_survival_time}</strong></td></tr>
+    </table>
+    <h3>Survival time by water temperature</h3>
+    <p><strong>&lt;5°C:</strong> 30-90 minutes · <strong>5-10°C:</strong> 1-3 hours · <strong>10-15°C:</strong> 3-12 hours · <strong>15°C+:</strong> 12+ hours</p>
+  `;
+}
+
+function renderAirQualityDetail(d) {
+  const pollutantList = Object.values(d.pollutants || {}).sort((a,b) => b.who_ratio - a.who_ratio);
+  return `
+    <h2>🫁 Air Quality — ${d.location}</h2>
+    <div style="font-size:42px;font-weight:800;margin:16px 0">AQI ${d.european_aqi}
+      <span class="aw-prism-badge" style="background:${d.band.color}22;color:${d.band.color};font-size:14px">${d.band.label}</span></div>
+    <p style="font-size:15px">${d.band.advice}</p>
+    ${d.advisory ? `<div style="margin:16px 0"><strong>General population:</strong> ${d.advisory.general}<br><strong>Sensitive groups:</strong> ${d.advisory.sensitive}</div>` : ''}
+    <h3>Pollutants</h3>
+    ${pollutantList.map(p => `
+      <div style="border:1px solid var(--w-border);border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div><strong style="font-size:16px">${p.name}</strong> <span style="color:var(--w-text-muted);font-size:12px">${p.full_name}</span></div>
+          <div style="font-size:20px;font-weight:800">${p.value}<span style="font-size:11px;color:var(--w-text-light);margin-left:4px">μg/m³</span></div>
+        </div>
+        <div style="margin:8px 0;background:var(--w-bg-elevated);height:6px;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(200, p.who_ratio*100)}%;background:${p.who_ratio < 0.5 ? '#22c55e' : p.who_ratio < 1 ? '#84cc16' : p.who_ratio < 2 ? '#eab308' : '#ef4444'}"></div>
+        </div>
+        <div style="font-size:11px;color:var(--w-text-muted)">${(p.who_ratio*100).toFixed(0)}% of WHO guideline (${p.who_benchmark} μg/m³)</div>
+        <div style="font-size:13px;margin-top:8px">${p.description}</div>
+        <div style="font-size:11px;color:var(--w-text-muted);margin-top:6px"><strong>Sources:</strong> ${p.sources.join(' · ')}</div>
+        <div style="font-size:11px;color:var(--w-text-muted);margin-top:4px"><strong>Health impact:</strong> ${p.health}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function renderRiversDetail(d) {
+  return `
+    <h2>🏞️ Ayrshire Rivers</h2>
+    <div style="font-size:22px;font-weight:800;margin:16px 0">${d.overall_label}</div>
+    <p>${d.station_count} monitoring stations · ${d.rising_count} rising</p>
+    ${d.stations.map(s => `
+      <div style="border:1px solid var(--w-border);border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div>
+            <strong style="font-size:15px">${s.river}</strong>
+            <span style="color:var(--w-text-muted);font-size:12px"> · ${s.station_name}</span>
+          </div>
+          <div style="font-size:22px;font-weight:800">${s.level_m != null ? s.level_m + 'm' : '—'} <span style="font-size:16px">${s.trend_arrow}</span></div>
+        </div>
+        ${s.min_24h_m != null ? `
+          <div style="font-size:11px;color:var(--w-text-muted);margin-top:6px">24h range: ${s.min_24h_m}m → ${s.max_24h_m}m ${s.change_24h_m != null ? `(${s.change_24h_m >= 0 ? '+' : ''}${s.change_24h_m}m)` : ''}</div>
+          <div style="margin:6px 0;background:var(--w-bg-elevated);height:6px;border-radius:3px;overflow:hidden;position:relative">
+            <div style="height:100%;width:${s.range_pct || 0}%;background:${s.concern >= 2 ? '#ef4444' : s.concern === 1 ? '#eab308' : '#22c55e'}"></div>
+          </div>` : ''}
+        <div style="font-size:11px;color:var(--w-text-muted)">Status: <strong style="text-transform:capitalize">${s.status}</strong> · Trend: ${s.trend} · ${s.readings_count || 0} readings/24h</div>
+      </div>
+    `).join('')}
+    <p style="font-size:11px;color:var(--w-text-muted);margin-top:12px">Data from SEPA real-time river levels via siphon. Flood thresholds are approximate — check <a href="https://www.sepa.org.uk/environment/water/flooding/flood-warnings/" target="_blank">SEPA official warnings</a> for authoritative guidance.</p>
+  `;
+}
+
+function renderAQI(aq) {
+  if (!aq) return '<div class="w-card"><div class="aw-section-title"><span class="aw-icon">💨</span> Air Quality</div><p class="w-text-muted">Unavailable</p></div>';
+  const cur = aq.current ?? {};
+  const aqi = cur.european_aqi;
+  const level = aqi != null ? aqiLevel(aqi) : null;
+  const pct = aqi != null ? Math.min(100, (aqi/150)*100) : 0;
+
+  return `
+  <div class="w-card">
+    <div class="aw-section-title"><span class="aw-icon">💨</span> Air Quality</div>
+    ${level ? `
+    <div class="aw-aqi-header">
+      <div class="aw-aqi-score" style="color:${level.color}">${fmt(aqi,0)}</div>
+      <span class="aw-aqi-badge" style="background:${level.bg};color:${level.color}">${level.label}</span>
+    </div>` : ''}
+    <div class="aw-aqi-bar-track"><div class="aw-aqi-bar-fill" style="width:${pct}%"></div></div>
+    <div class="aw-aqi-labels"><span>Good</span><span>Moderate</span><span>Very Poor</span></div>
+    <div class="aw-aqi-stats">
+      <div class="aw-aqi-stat">
+        <div class="aw-aqi-stat-label">PM2.5</div>
+        <div class="aw-aqi-stat-value">${fmt(cur.pm2_5)}</div>
+        <div class="aw-aqi-stat-unit">μg/m³</div>
+      </div>
+      <div class="aw-aqi-stat">
+        <div class="aw-aqi-stat-label">PM10</div>
+        <div class="aw-aqi-stat-value">${fmt(cur.pm10)}</div>
+        <div class="aw-aqi-stat-unit">μg/m³</div>
+      </div>
+      <div class="aw-aqi-stat">
+        <div class="aw-aqi-stat-label">Ozone</div>
+        <div class="aw-aqi-stat-value">${fmt(cur.ozone)}</div>
+        <div class="aw-aqi-stat-unit">μg/m³</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─── Extra Data Cards (Rivers, Sky Watch) ───────────────────
+function renderRivers(data) {
+  if (!data || !data.rivers) return '';
+  const rivers = data.rivers;
+  const keys = Object.keys(rivers);
+  if (keys.length === 0) return '';
+
+  const rows = keys.map(key => {
+    const r = rivers[key];
+    const level = r.current?.level_m;
+    const trend = r.trend;
+    const trendArrow = trend === 'rising' ? '↑' : trend === 'falling' ? '↓' : '→';
+    const trendColor = trend === 'rising' ? 'var(--w-orange)' : trend === 'falling' ? 'var(--w-cyan)' : 'var(--w-green)';
+    const levelColor = level != null && level > 2 ? 'var(--w-red)' : trend === 'rising' ? 'var(--w-orange)' : 'var(--w-green)';
+    const name = r.station || key.replace(/_/g, ' ').replace(/river /i, '').replace(/\b\w/g, c => c.toUpperCase());
+    return `
+      <tr class="aw-river-row">
+        <td>${name}</td>
+        <td><span class="aw-river-level" style="color:${levelColor}">${level != null ? level.toFixed(2) : '–'}<small>m</small></span></td>
+        <td><span class="aw-river-trend" style="color:${trendColor}">${trendArrow}</span></td>
+        <td class="aw-river-range">${r.min_24h != null ? r.min_24h.toFixed(2) : '–'} / ${r.max_24h != null ? r.max_24h.toFixed(2) : '–'}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+  <div class="w-card">
+    <div class="aw-section-title"><span class="aw-icon">🏞️</span> Ayrshire Rivers</div>
+    <table class="aw-river-table">
+      <thead><tr><th>River</th><th>Level</th><th>Trend</th><th>24h Min/Max</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderSkyWatch(moonData, auroraData, uvData) {
+  const moonHtml = renderMoon(moonData);
+  const auroraHtml = renderAurora(auroraData);
+  const uvHtml = renderUV(uvData);
+
+  return `
+  <div class="w-card">
+    <div class="aw-section-title"><span class="aw-icon">🔭</span> Sky Watch</div>
+    <div class="aw-sky-grid">
+      ${moonHtml}
+      ${auroraHtml}
+      ${uvHtml}
+      <div class="aw-sky-block" id="iss-card">
+        <div class="aw-sky-block-title">🛰️ ISS Position</div>
+        <div class="aw-iss-coords">
+          <div class="aw-iss-coord">
+            <div class="aw-iss-coord-label">Latitude</div>
+            <div class="aw-iss-coord-value" id="iss-lat">–</div>
+          </div>
+          <div class="aw-iss-coord">
+            <div class="aw-iss-coord-label">Longitude</div>
+            <div class="aw-iss-coord-value" id="iss-lon">–</div>
+          </div>
+        </div>
+        <div class="aw-iss-refresh" id="iss-updated">Fetching position...</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderMoon(data) {
+  if (!data) return `<div class="aw-sky-block"><div class="aw-sky-block-title">🌙 Moon</div><p style="font-size:12px;color:var(--w-text-muted)">Unavailable</p></div>`;
+  const illum = data.illumination ?? 0;
+  return `
+  <div class="aw-sky-block">
+    <div class="aw-sky-block-title">🌙 Moon Phase</div>
+    <div class="aw-moon-display">
+      <div class="aw-moon-emoji">${data.emoji || '🌑'}</div>
+      <div class="aw-moon-info">
+        <div class="aw-moon-phase">${data.phase_name || 'Unknown'}</div>
+        <div class="aw-moon-illum">${illum}% illuminated</div>
+      </div>
+    </div>
+    <div class="aw-illum-track"><div class="aw-illum-fill" style="width:${illum}%"></div></div>
+  </div>`;
+}
+
+function renderAurora(data) {
+  if (!data) return `<div class="aw-sky-block"><div class="aw-sky-block-title">🌌 Aurora</div><p style="font-size:12px;color:var(--w-text-muted)">Unavailable</p></div>`;
+  const colorMap = { green: 'var(--w-green)', yellow: '#eab308', amber: 'var(--w-orange)', red: 'var(--w-red)' };
+  const dotColor = colorMap[data.status] || 'var(--w-green)';
+  const visible = data.visible_scotland;
+  const visBg = visible ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.08)';
+  const visColor = visible ? 'var(--w-green)' : 'var(--w-text-muted)';
+  return `
+  <div class="aw-sky-block">
+    <div class="aw-sky-block-title">🌌 Aurora Borealis</div>
+    <div class="aw-aurora-status">
+      <div class="aw-aurora-dot" style="background:${dotColor};box-shadow:0 0 8px ${dotColor}"></div>
+      <div class="aw-aurora-desc" style="text-transform:capitalize">${data.status || 'Unknown'}</div>
+    </div>
+    <div class="aw-aurora-detail">${data.description || ''}</div>
+    <div class="aw-aurora-visible" style="background:${visBg};color:${visColor}">
+      ${visible ? '✓' : '✗'} Visible from Scotland: ${visible ? 'Yes' : 'No'}
+    </div>
+  </div>`;
+}
+
+function renderFloodWarnings(data) {
+  if (!data || data.total_warnings === 0) return '';
+  const badges = [];
+  if (data.severe > 0) badges.push(`<span class="aw-flood-badge" style="background:rgba(239,68,68,0.12);color:var(--w-red)">${data.severe} Severe</span>`);
+  if (data.warnings > 0) badges.push(`<span class="aw-flood-badge" style="background:rgba(249,115,22,0.12);color:var(--w-orange)">${data.warnings} Warning${data.warnings>1?'s':''}</span>`);
+  if (data.alerts > 0) badges.push(`<span class="aw-flood-badge" style="background:rgba(234,179,8,0.12);color:#a16207">${data.alerts} Alert${data.alerts>1?'s':''}</span>`);
+
+  const items = (data.items || []).slice(0, 5).map(item => {
+    const sevColor = item.severity === 'Severe Flood Warning' ? 'var(--w-red)' : item.severity === 'Flood Warning' ? 'var(--w-orange)' : '#a16207';
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--w-border);font-size:12px">
+      <div style="font-weight:700;color:${sevColor}">${item.description || 'Flood warning'}</div>
+      <div style="color:var(--w-text-muted);margin-top:2px">${item.area || ''}</div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="w-card">
+    <div class="aw-section-title"><span class="aw-icon">🚨</span> Flood Warnings</div>
+    <div class="aw-flood-summary">${badges.join('')}</div>
+    ${items}
+  </div>`;
+}
+
+// ─── UV Index ──────────────────────────────────────────────
+function uvColor(uv) {
+  if (uv >= 8) return '#dc2626';
+  if (uv >= 6) return '#ea580c';
+  if (uv >= 3) return '#ca8a04';
+  return '#16a34a';
+}
+function uvLevel(uv) {
+  if (uv >= 8) return 'Very High';
+  if (uv >= 6) return 'High';
+  if (uv >= 3) return 'Moderate';
+  return 'Low';
+}
+function renderUV(data) {
+  if (!data) return `<div class="aw-sky-block"><div class="aw-sky-block-title">☀️ UV Index</div><p style="font-size:12px;color:var(--w-text-muted)">Unavailable</p></div>`;
+  const uv = data.current_uv ?? 0;
+  const bg = uvColor(uv);
+  const level = data.level || uvLevel(uv);
+  const maxToday = data.max_today ?? uv;
+  const forecast = (data.forecast || []).slice(0, 3);
+  const forecastHtml = forecast.map(d => {
+    const day = new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short' });
+    return `<span class="aw-uv-pill" style="background:${uvColor(d.uv_max)}">${day} ${d.uv_max}</span>`;
+  }).join('');
+
+  return `
+  <div class="aw-sky-block">
+    <div class="aw-sky-block-title">☀️ UV Index</div>
+    <div class="aw-uv-current">
+      <div class="aw-uv-badge" style="background:${bg}">${Math.round(uv)}</div>
+      <div>
+        <div class="aw-uv-level">${level}</div>
+        <div class="aw-uv-label">Current UV</div>
+      </div>
+    </div>
+    <div class="aw-uv-max">Max today: ${maxToday}</div>
+    ${forecastHtml ? `<div class="aw-uv-forecast">${forecastHtml}</div>` : ''}
+  </div>`;
+}
+
+// ─── Quick Stats Bar ───────────────────────────────────────
+function renderQuickStats({ fuel, fx, aviation, space, floods } = {}) {
+  const pills = [];
+
+  // Fuel price
+  if (fuel) {
+    const price = fuel.petrol_ppl;
+    const change = fuel.petrol_change;
+    const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '';
+    const cls = change > 0 ? 'up' : change < 0 ? 'down' : '';
+    pills.push(`<div class="aw-qstat"><span class="aw-qstat-icon">⛽</span>${price}p${arrow ? ` <span class="aw-qstat-change ${cls}">${arrow}${Math.abs(change).toFixed(1)}</span>` : ''}</div>`);
+  }
+
+  // FX rate
+  if (fx && fx.rates) {
+    const usd = fx.rates.USD;
+    if (usd) pills.push(`<div class="aw-qstat"><span class="aw-qstat-icon">💷</span>$${usd.toFixed(4)}</div>`);
+  }
+
+  // Aircraft
+  if (aviation) {
+    pills.push(`<div class="aw-qstat"><span class="aw-qstat-icon">✈️</span>${aviation.count ?? 0} aircraft</div>`);
+  }
+
+  // Satellites
+  if (space) {
+    const total = (space.stations?.count ?? 0) + (space.active?.count ?? 0) + (space.starlink?.count ?? 0) + (space.visual?.count ?? 0);
+    pills.push(`<div class="aw-qstat"><span class="aw-qstat-icon">🛰️</span>${total} satellites</div>`);
+  }
+
+  // Flood warnings
+  if (floods && floods.total_warnings > 0) {
+    pills.push(`<div class="aw-qstat"><span class="aw-qstat-icon">🌊</span>${floods.total_warnings} flood warning${floods.total_warnings !== 1 ? 's' : ''}</div>`);
+  } else {
+    pills.push(`<div class="aw-qstat"><span class="aw-qstat-icon">🌊</span>No flood warnings</div>`);
+  }
+
+  if (pills.length === 0) return '';
+  return `<div class="aw-quick-stats">${pills.join('')}</div>`;
+}
+
+// ─── All Locations Overview ─────────────────────────────────
+async function loadAllLocations() {
+  const target = document.getElementById('overview-content');
+  const promises = LOCATIONS.map(async loc => {
+    if (weatherCache[loc]) return weatherCache[loc];
+    try {
+      const res = await fetch(`/api/weather/${loc}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      weatherCache[loc] = data;
+      return data;
+    } catch { return null; }
+  });
+
+  const results = await Promise.all(promises);
+  const cards = LOCATIONS.map((loc,i) => {
+    const d = results[i];
+    if (!d) return `<div class="aw-overview-card"><div class="aw-overview-name">${LOCATION_NAMES[loc]}</div><p class="w-text-muted w-text-small">Unavailable</p></div>`;
+    const cur = d.forecast?.current ?? {};
+    const code = cur.weather_code;
+    return `
+    <div class="aw-overview-card${loc===currentLocation?' active':''}" onclick="selectLocation('${loc}')">
+      <div class="aw-overview-name">${d.location.name}</div>
+      <div class="aw-overview-row">
+        <div class="aw-overview-temp">${fmt(cur.temperature_2m,0)}°</div>
+        <div class="aw-overview-icon">${wmoIcon(code)}</div>
+      </div>
+      <div class="aw-overview-desc">${wmoDesc(code)}</div>
+      <div class="aw-overview-detail">
+        <span>💨 ${fmt(cur.wind_speed_10m,0)} mph</span>
+        <span>💧 ${fmt(cur.relative_humidity_2m,0)}%</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  target.innerHTML = `<div class="aw-overview-grid">${cards}</div>`;
+}
+
+function selectLocation(loc) {
+  currentLocation = loc;
+  // Switch to forecast tab
+  document.querySelectorAll('.aw-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.aw-tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-tab="forecast"]').classList.add('active');
+  document.getElementById('panel-forecast').classList.add('active');
+  // Update pills
+  document.querySelectorAll('.aw-location-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.loc === loc);
+  });
+  loadWeather();
+}
+
+// ─── Radar Map (RainViewer) ─────────────────────────────────
+let radarInitialized = false;
+
+async function initRadarMap() {
+  if (radarInitialized && radarMap) {
+    radarMap.invalidateSize();
+    return;
+  }
+  const el = document.getElementById('radar-map');
+  if (!el) return;
+
+  radarMap = L.map('radar-map', {zoomControl:true, scrollWheelZoom:true, maxZoom:8}).setView([55.5,-4.6],7);
+
+  // Use CartoDB dark/light depending on theme
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const tileUrl = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  L.tileLayer(tileUrl, {
+    attribution: '© OpenStreetMap © CARTO',
+    subdomains: 'abcd', maxZoom: 8
+  }).addTo(radarMap);
+
+  // Location markers
+  const markers = {
+    'Ayr':[55.4583,-4.6292],'Troon':[55.5369,-4.6561],'Prestwick':[55.4961,-4.6148],
+    'Kilmarnock':[55.6111,-4.4961],'Irvine':[55.6110,-4.6669],'Largs':[55.7948,-4.8695],
+    'Maybole':[55.3556,-4.6844],'Girvan':[55.2347,-4.8592],'Cumnock':[55.4542,-4.2697]
+  };
+  for (const [name,coords] of Object.entries(markers)) {
+    L.circleMarker(coords, {
+      radius: 6, color: '#2563eb', fillColor: '#3b82f6',
+      fillOpacity: 0.9, weight: 2
+    }).addTo(radarMap).bindPopup(`<b>${name}</b>`);
+  }
+
+  radarInitialized = true;
+  await loadRadarFrames();
+}
+
+async function loadRadarFrames() {
+  try {
+    const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data = await res.json();
+    radarTimestamps = [...(data.radar?.past ?? []), ...(data.radar?.nowcast ?? [])];
+    if (radarTimestamps.length) {
+      radarIdx = (data.radar?.past?.length ?? 1) - 1;
+      showRadarFrame(radarTimestamps[radarIdx]);
+      startRadarAnimation();
+    }
+  } catch(e) {
+    console.warn('RainViewer unavailable:', e);
+    const timeEl = document.getElementById('radar-time');
+    if (timeEl) timeEl.textContent = 'Radar data unavailable';
+  }
+}
+
+function startRadarAnimation() {
+  if (radarInterval) clearInterval(radarInterval);
+  radarInterval = setInterval(() => {
+    if (!radarPlaying || !radarTimestamps.length) return;
+    radarIdx = (radarIdx + 1) % radarTimestamps.length;
+    showRadarFrame(radarTimestamps[radarIdx]);
+  }, 600);
+}
+
+function toggleRadarPlay() {
+  radarPlaying = !radarPlaying;
+  const btn = document.getElementById('radar-play-btn');
+  if (btn) btn.textContent = radarPlaying ? '⏸ Playing' : '▶ Paused';
+  if (btn) btn.classList.toggle('active', radarPlaying);
+}
+
+function showRadarFrame(frame) {
+  if (!radarMap || !frame) return;
+  if (radarLayer) radarMap.removeLayer(radarLayer);
+
+  // RainViewer provides path-based URLs (e.g. /v2/radar/abc123)
+  const host = 'https://tilecache.rainviewer.com';
+  const path = frame.path || `/v2/radar/${frame.time}`;
+  radarLayer = L.tileLayer(
+    `${host}${path}/256/{z}/{x}/{y}/6/1_1.png`,
+    {opacity: 0.6, zIndex: 10, maxNativeZoom: 6, maxZoom: 8}
+  ).addTo(radarMap);
+
+  const ts = frame.time;
+  const timeEl = document.getElementById('radar-time');
+  if (timeEl) {
+    const d = new Date(ts * 1000);
+    const isPast = d <= new Date();
+    timeEl.textContent = `${isPast ? '📡' : '🔮'} ${d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'})} ${isPast ? '' : '(forecast)'}`;
+  }
+}
+
+// ─── Auto Refresh ───────────────────────────────────────────
+function scheduleRefresh() {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(() => { loadWeather(); loadWarnings(); }, 5 * 60 * 1000);
+}
+
+// ─── Theme change listener (update radar tiles) ─────────────
+const themeObserver = new MutationObserver(() => {
+  if (radarInitialized && radarMap) {
+    radarInitialized = false;
+    radarMap.remove();
+    radarMap = null;
+    radarLayer = null;
+    if (radarInterval) clearInterval(radarInterval);
+    // Re-init if radar tab is visible
+    if (document.getElementById('panel-radar').classList.contains('active')) {
+      setTimeout(initRadarMap, 100);
+    }
+  }
+});
+themeObserver.observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+
+
+// --- Weather Warnings (Met Office) --------------------------
+const WARNING_ICONS = {
+  wind: '💨', snow: '❄️', rain: '🌧️', ice: '🧊',
+  fog: '🌫️', thunderstorm: '⛈️', lightning: '⚡',
+  thunder: '⛈️', heat: '🌡️', default: '⚠️'
+};
+
+const AYRSHIRE_AREAS = new Set(['East Ayrshire', 'North Ayrshire', 'South Ayrshire']);
+
+function warningIcon(hazard) {
+  const h = (hazard || '').toLowerCase();
+  for (const [key, icon] of Object.entries(WARNING_ICONS)) {
+    if (h.includes(key)) return icon;
+  }
+  return WARNING_ICONS.default;
+}
+
+function deduplicateWarnings(warnings) {
+  const groups = {};
+  for (const w of warnings) {
+    const key = `${w.severity}-${w.hazard.toLowerCase()}`;
+    if (!groups[key]) {
+      groups[key] = { ...w, areas: [...(w.areas || [])], links: [w.link] };
+    } else {
+      const g = groups[key];
+      for (const a of (w.areas || [])) {
+        if (!g.areas.includes(a)) g.areas.push(a);
+      }
+      g.links.push(w.link);
+      if (w.valid_from && (!g.valid_from || w.valid_from < g.valid_from)) g.valid_from = w.valid_from;
+      if (w.valid_to && (!g.valid_to || w.valid_to > g.valid_to)) g.valid_to = w.valid_to;
+      if (w.affects_ayrshire) g.affects_ayrshire = true;
+    }
+  }
+  return Object.values(groups);
+}
+
+function renderWarningAreas(areas) {
+  if (!areas || !areas.length) return '';
+  const sorted = [...areas].sort((a, b) => {
+    const aA = AYRSHIRE_AREAS.has(a) ? 0 : 1;
+    const bA = AYRSHIRE_AREAS.has(b) ? 0 : 1;
+    return aA - bA || a.localeCompare(b);
+  });
+  return '<div class="aw-warning-areas">' +
+    sorted.map(a => `<span class="aw-warning-area${AYRSHIRE_AREAS.has(a) ? ' ayrshire' : ''}">${a}</span>`).join('') +
+    '</div>';
+}
+
+async function loadWarnings() {
+  const target = document.getElementById('warnings-content');
+  try {
+    const res = await fetch('/api/warnings');
+    if (!res.ok) return;
+    const data = await res.json();
+    const warnings = data.warnings || [];
+
+    if (warnings.length === 0) {
+      target.innerHTML = `
+        <div class="aw-warnings">
+          <div class="aw-section-title"><span class="aw-icon">⚠️</span> Weather Warnings</div>
+          <div class="aw-warnings-clear">
+            <div class="aw-clear-dot"></div>
+            <div>
+              <div class="aw-clear-text">No active warnings for Strathclyde</div>
+              <div class="aw-clear-sub">Met Office · All clear</div>
+            </div>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const order = {red: 0, amber: 1, yellow: 2};
+    warnings.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
+    const merged = deduplicateWarnings(warnings);
+
+    target.innerHTML = `
+      <div class="aw-warnings">
+        <div class="aw-section-title"><span class="aw-icon">⚠️</span> Met Office Weather Warnings</div>
+        ${merged.map(w => {
+          const sev = w.severity;
+          const pulse = (sev === 'amber' || sev === 'red') ? '<span class="aw-warning-pulse"></span>' : '';
+          const timing = w.valid_from ? `🕒 ${w.valid_from} → ${w.valid_to || '?'}` : '';
+          const link = w.links ? w.links[0] : w.link;
+
+          return `
+          <a class="aw-warning-card aw-warning-${sev}" href="${link}" target="_blank" rel="noopener">
+            <div class="aw-warning-icon">${warningIcon(w.hazard)}</div>
+            <div class="aw-warning-body">
+              <div class="aw-warning-header">
+                <div class="aw-warning-title">${w.hazard.charAt(0).toUpperCase() + w.hazard.slice(1)} Warning</div>
+                <span class="aw-warning-badge">${sev.toUpperCase()}</span>
+              </div>
+              ${timing ? `<div class="aw-warning-timing">${timing}</div>` : ''}
+              ${renderWarningAreas(w.areas)}
+              <div class="aw-warning-source">${pulse} Met Office · Tap for details</div>
+            </div>
+          </a>`;
+        }).join('')}
+      </div>
+    `;
+  } catch(e) {
+    console.warn('Failed to load warnings:', e);
+  }
+}
+
+// ─── Boot ───────────────────────────────────────────────────
+renderLocationBar();
+loadWeather();
+loadWarnings();
+scheduleRefresh();
+</script>
+
+<!-- Three.js Ocean Visualization -->
+<script type="module">
+import * as THREE from 'three';
+import { Water } from 'three/addons/objects/Water.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+let _renderer, _scene, _camera, _water, _animId;
+let _alive = false;
+
+// Hero ocean background
+let _hRenderer, _hScene, _hCamera, _hWater, _hAlive = false;
+
+function tempToColor(celsius) {
+  const t = Math.max(0, Math.min(1, (celsius - 5) / 15));
+  const r = Math.floor(t * 10);
+  const g = Math.floor(30 + t * 90);
+  const b = Math.floor(80 + (1 - t) * 60);
+  return (r << 16) | (g << 8) | b;
+}
+
+// ─── Weather classification helpers ─────────────────────────
+function isRainCode(code) {
+  // WMO codes: 51-57 drizzle, 61-67 rain, 80-82 showers
+  return (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+}
+function isSnowCode(code) {
+  // WMO codes: 71-77 snow, 85-86 snow showers
+  return (code >= 71 && code <= 77) || (code >= 85 && code <= 86);
+}
+function precipIntensity(code, precip) {
+  // Return 0-1 intensity factor
+  if (precip > 0) return Math.min(1, precip / 8); // 8mm/h = max
+  if (!code) return 0;
+  // Light drizzle/snow
+  if ([51,56,61,66,71,77,85].includes(code)) return 0.2;
+  // Moderate
+  if ([53,63,73,80].includes(code)) return 0.5;
+  // Heavy
+  if ([55,57,65,67,75,82,86].includes(code)) return 0.9;
+  return 0;
+}
+
+// ─── Rain/drizzle as line-segment streaks ───────────────────
+function createPrecipitation(scene, weatherCode, precip, windSpeed, windDir, bounds) {
+  const isSnow = isSnowCode(weatherCode);
+  const isRain = isRainCode(weatherCode);
+  if (!isRain && !isSnow) return null;
+
+  const intensity = precipIntensity(weatherCode, precip);
+  const count = Math.floor(isSnow ? 800 * intensity : 3000 * intensity);
+  if (count < 30) return null;
+
+  const windRad = ((windDir || 0) + 180) * Math.PI / 180;
+  const windFactor = Math.min((windSpeed || 0) / 40, 1);
+
+  if (isSnow) {
+    // Snow stays as points but with proper soft rendering
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      positions[i3]     = (Math.random() - 0.5) * bounds.width;
+      positions[i3 + 1] = Math.random() * bounds.height;
+      positions[i3 + 2] = (Math.random() - 0.5) * bounds.depth;
+      velocities[i3]     = Math.sin(windRad) * windFactor * 8 + (Math.random() - 0.5) * 2;
+      velocities[i3 + 1] = -(5 + Math.random() * 5) * (0.3 + intensity * 0.7);
+      velocities[i3 + 2] = Math.cos(windRad) * windFactor * 8 + (Math.random() - 0.5) * 2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xddeeff, size: 2, transparent: true, opacity: 0.6,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const pts = new THREE.Points(geo, mat);
+    scene.add(pts);
+    return { mesh: pts, velocities, bounds, isSnow: true, isLines: false, count, intensity };
+  }
+
+  // Rain — each drop is a line segment: top + bottom vertex
+  const positions = new Float32Array(count * 6); // 2 vertices * 3 coords per drop
+  const velocities = new Float32Array(count * 3);
+
+  // Streak length — visible at scene scale
+  const streakLen = 4 + intensity * 8;
+  // Wind angle — rain blows sideways in strong wind
+  // windFactor 0.5 at 20mph should give a clear ~30° angle
+  const windAngle = windFactor * 1.5; // much stronger wind influence
+  const windDx = Math.sin(windRad) * windAngle;
+  const windDz = Math.cos(windRad) * windAngle;
+
+  for (let i = 0; i < count; i++) {
+    const i6 = i * 6;
+    const i3 = i * 3;
+    const x = (Math.random() - 0.5) * bounds.width;
+    const y = Math.random() * bounds.height;
+    const z = (Math.random() - 0.5) * bounds.depth;
+
+    // Top of streak
+    positions[i6]     = x;
+    positions[i6 + 1] = y;
+    positions[i6 + 2] = z;
+    // Bottom of streak — angled by wind
+    positions[i6 + 3] = x + windDx * streakLen;
+    positions[i6 + 4] = y - streakLen;
+    positions[i6 + 5] = z + windDz * streakLen;
+
+    // Velocity — wind pushes rain sideways hard
+    velocities[i3]     = Math.sin(windRad) * windFactor * 50;
+    velocities[i3 + 1] = -(50 + Math.random() * 30) * (0.5 + intensity * 0.5);
+    velocities[i3 + 2] = Math.cos(windRad) * windFactor * 50;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xccddee,
+    transparent: true,
+    opacity: 0.4 + intensity * 0.4,
+    linewidth: 1,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const lines = new THREE.LineSegments(geo, mat);
+  scene.add(lines);
+
+  return { mesh: lines, velocities, bounds, isSnow: false, isLines: true, count, intensity, streakLen, windDx, windDz };
+}
+
+function animatePrecipitation(precipObj, dt) {
+  if (!precipObj) return;
+  const b = precipObj.bounds;
+
+  if (precipObj.isLines) {
+    // Rain streaks — move both vertices of each line segment
+    const pos = precipObj.mesh.geometry.attributes.position.array;
+    const vel = precipObj.velocities;
+    const sl = precipObj.streakLen;
+    const wdx = precipObj.windDx;
+    const wdz = precipObj.windDz;
+
+    for (let i = 0; i < precipObj.count; i++) {
+      const i6 = i * 6;
+      const i3 = i * 3;
+      const dx = vel[i3] * dt;
+      const dy = vel[i3 + 1] * dt;
+      const dz = vel[i3 + 2] * dt;
+
+      // Move top vertex
+      pos[i6]     += dx;
+      pos[i6 + 1] += dy;
+      pos[i6 + 2] += dz;
+      // Move bottom vertex (same delta)
+      pos[i6 + 3] += dx;
+      pos[i6 + 4] += dy;
+      pos[i6 + 5] += dz;
+
+      // Reset when below water
+      if (pos[i6 + 1] < -2) {
+        const x = (Math.random() - 0.5) * b.width;
+        const y = b.height * 0.7 + Math.random() * b.height * 0.3;
+        const z = (Math.random() - 0.5) * b.depth;
+        pos[i6]     = x;
+        pos[i6 + 1] = y;
+        pos[i6 + 2] = z;
+        pos[i6 + 3] = x + wdx * sl;
+        pos[i6 + 4] = y - sl;
+        pos[i6 + 5] = z + wdz * sl;
+      }
+    }
+    precipObj.mesh.geometry.attributes.position.needsUpdate = true;
+  } else {
+    // Snow points
+    const pos = precipObj.mesh.geometry.attributes.position.array;
+    const vel = precipObj.velocities;
+    for (let i = 0; i < precipObj.count; i++) {
+      const i3 = i * 3;
+      pos[i3]     += vel[i3] * dt + Math.sin(pos[i3 + 1] * 0.1 + dt * 3) * 0.3;
+      pos[i3 + 1] += vel[i3 + 1] * dt;
+      pos[i3 + 2] += vel[i3 + 2] * dt;
+      if (pos[i3 + 1] < -2) {
+        pos[i3]     = (Math.random() - 0.5) * b.width;
+        pos[i3 + 1] = b.height * 0.8 + Math.random() * b.height * 0.2;
+        pos[i3 + 2] = (Math.random() - 0.5) * b.depth;
+      }
+    }
+    precipObj.mesh.geometry.attributes.position.needsUpdate = true;
+  }
+}
+
+// ─── Whitecap foam on water surface ─────────────────────────
+function createWhitecaps(scene, windSpeed, waveHeight, bounds) {
+  const windFactor = Math.max(0, (windSpeed - 12) / 30);
+  const waveFactor = Math.max(0, (waveHeight - 1) / 3);
+  const intensity = Math.min(1, Math.max(windFactor, waveFactor));
+  if (intensity < 0.05) return null;
+
+  const count = Math.floor(200 + intensity * 800);
+  const positions = new Float32Array(count * 3);
+  const lifetimes = new Float32Array(count);
+  const speeds = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const i3 = i * 3;
+    positions[i3]     = (Math.random() - 0.5) * bounds.width;
+    positions[i3 + 1] = 0.1 + Math.random() * 0.5;
+    positions[i3 + 2] = (Math.random() - 0.5) * bounds.depth;
+    lifetimes[i] = Math.random();
+    speeds[i] = 0.15 + Math.random() * 0.35;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 4 + intensity * 5,
+    transparent: true,
+    opacity: 0.5 + intensity * 0.3,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    sizeAttenuation: true,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  scene.add(points);
+
+  return { points, lifetimes, speeds, bounds, intensity, count };
+}
+
+function animateWhitecaps(wcObj, dt, time) {
+  if (!wcObj) return;
+  const pos = wcObj.points.geometry.attributes.position.array;
+  const life = wcObj.lifetimes;
+  const spd = wcObj.speeds;
+  const b = wcObj.bounds;
+
+  for (let i = 0; i < wcObj.count; i++) {
+    const i3 = i * 3;
+    life[i] += dt * spd[i];
+
+    if (life[i] > 1) {
+      life[i] = 0;
+      pos[i3]     = (Math.random() - 0.5) * b.width;
+      pos[i3 + 1] = 0.1;
+      pos[i3 + 2] = (Math.random() - 0.5) * b.depth;
+    }
+
+    // Bob on surface
+    pos[i3 + 1] = 0.1 + Math.sin(time * 1.5 + i * 2.3) * 0.5;
+    pos[i3] += Math.sin(time * 0.3 + i) * dt * 2;
+  }
+  wcObj.points.geometry.attributes.position.needsUpdate = true;
+
+  // Pulse opacity
+  const shimmer = 0.85 + Math.sin(time * 3) * 0.15;
+  wcObj.points.material.opacity = (0.5 + wcObj.intensity * 0.3) * shimmer;
+}
+
+// ─── Codrops RainEffect lens overlay ────────────────────────
+// Adapted from https://github.com/codrops/RainEffect (MIT)
+function _rc(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
+function _rr(a=0,b=1,fn=null){if(arguments.length===1){b=a;a=0;}return a+((fn||((n)=>n))(Math.random()))*(b-a);}
+function _rch(c){return Math.random()<=c;}
+
+const _RD={x:0,y:0,r:0,spreadX:0,spreadY:0,momentum:0,momentumX:0,lastSpawn:0,nextSpawn:0,parent:null,isNew:true,killed:false,shrink:0};
+
+function RaindropsEngine(W,H,sc,alphaImg,colorImg,o){
+  const DS=64;
+  const cv=_rc(W,H), cx=cv.getContext('2d');
+  const dl=_rc(W,H), dlx=dl.getContext('2d');
+  let drops=[], dCnt=0, cleanIter=0, lastT=null;
+  const dR=o.maxR-o.minR;
+  const aM=Math.sqrt((W*H/sc)/(1024*768));
+
+  // Pre-render 255 drop sprites
+  const buf=_rc(DS,DS), bx=buf.getContext('2d');
+  const gfx=Array.from({length:255},(_,i)=>{
+    const d=_rc(DS,DS), dx=d.getContext('2d');
+    bx.clearRect(0,0,DS,DS);
+    bx.globalCompositeOperation='source-over';
+    bx.drawImage(colorImg,0,0,DS,DS);
+    bx.globalCompositeOperation='screen';
+    bx.fillStyle='rgba(0,0,'+i+',1)';
+    bx.fillRect(0,0,DS,DS);
+    dx.globalCompositeOperation='source-over';
+    dx.drawImage(alphaImg,0,0,DS,DS);
+    dx.globalCompositeOperation='source-in';
+    dx.drawImage(buf,0,0,DS,DS);
+    return d;
+  });
+  const clr=_rc(128,128);
+  const clrx=clr.getContext('2d');
+  clrx.fillStyle='#000'; clrx.beginPath(); clrx.arc(64,64,64,0,Math.PI*2); clrx.fill();
+
+  function ddrop(tx,dp){
+    let d=Math.max(0,Math.min(1,((dp.r-o.minR)/dR)*0.9));
+    d*=1/(((dp.spreadX+dp.spreadY)*0.5)+1);
+    d=Math.floor(d*(gfx.length-1));
+    tx.globalAlpha=1; tx.globalCompositeOperation='source-over';
+    tx.drawImage(gfx[d],
+      (dp.x-(dp.r*(dp.spreadX+1)))*sc,(dp.y-(dp.r*1.5*(dp.spreadY+1)))*sc,
+      (dp.r*2*(dp.spreadX+1))*sc,(dp.r*3*(dp.spreadY+1))*sc);
+  }
+
+  function tick(){
+    cx.clearRect(0,0,W,H);
+    const now=Date.now();
+    if(!lastT) lastT=now;
+    let ts=(now-lastT)/((1/60)*1000);
+    if(ts>1.1)ts=1.1;
+    ts*=o.globalTimeScale;
+    lastT=now;
+
+    // Droplets layer
+    if(cleanIter>0){cleanIter-=ts;dlx.globalCompositeOperation='destination-out';dlx.fillStyle='rgba(0,0,0,'+(0.05*ts)+')';dlx.fillRect(0,0,W,H);}
+    if(o.raining){
+      dCnt+=o.dropletsRate*ts*aM;
+      for(let i=0;i<dCnt;i++){dCnt--;ddrop(dlx,Object.assign(Object.create(_RD),{x:_rr(W/sc),y:_rr(H/sc),r:_rr(o.dropletsSize[0],o.dropletsSize[1],(n)=>n*n)}));}
+    }
+    cx.drawImage(dl,0,0,W,H);
+
+    // New rain
+    let nd=[];
+    if(o.raining){
+      let lim=o.rainLimit*ts*aM, cnt=0;
+      while(_rch(o.rainChance*ts*aM)&&cnt<lim){
+        cnt++;
+        const r=_rr(o.minR,o.maxR,(n)=>n*n*n);
+        if(drops.length+nd.length<o.maxDrops*aM)
+          nd.push(Object.assign(Object.create(_RD),{x:_rr(W/sc),y:_rr((H/sc)*o.spawnArea[0],(H/sc)*o.spawnArea[1]),r,momentum:1+((r-o.minR)*0.1)+_rr(2),spreadX:1.5,spreadY:1.5}));
+      }
+    }
+
+    drops.sort((a,b)=>(a.y*(W/sc)+a.x)-(b.y*(W/sc)+b.x));
+    drops.forEach((dp,i)=>{
+      if(dp.killed)return;
+      if(_rch((dp.r-(o.minR*o.dropFallMultiplier))*(0.1/dR)*ts))dp.momentum+=_rr((dp.r/o.maxR)*4);
+      if(o.autoShrink&&dp.r<=o.minR&&_rch(0.05*ts))dp.shrink+=0.01;
+      dp.r-=dp.shrink*ts; if(dp.r<=0){dp.killed=true;return;}
+
+      // Trails
+      if(o.raining){
+        dp.lastSpawn+=dp.momentum*ts*o.trailRate;
+        if(dp.lastSpawn>dp.nextSpawn&&drops.length+nd.length<o.maxDrops*aM){
+          nd.push(Object.assign(Object.create(_RD),{x:dp.x+_rr(-dp.r,dp.r)*0.1,y:dp.y-dp.r*0.01,r:dp.r*_rr(o.trailScaleRange[0],o.trailScaleRange[1]),spreadY:dp.momentum*0.1,parent:dp}));
+          dp.r*=Math.pow(0.97,ts); dp.lastSpawn=0;
+          dp.nextSpawn=_rr(o.minR,o.maxR)-(dp.momentum*2*o.trailRate)+(o.maxR-dp.r);
+        }
+      }
+
+      dp.spreadX*=Math.pow(0.4,ts); dp.spreadY*=Math.pow(0.7,ts);
+      const moved=dp.momentum>0;
+      if(moved){dp.y+=dp.momentum*o.globalTimeScale;dp.x+=dp.momentumX*o.globalTimeScale;if(dp.y>(H/sc)+dp.r){dp.killed=true;return;}}
+
+      if((moved||dp.isNew)&&!dp.killed){
+        dp.isNew=false;
+        drops.slice(i+1,i+70).forEach(d2=>{
+          if(dp!==d2&&dp.r>d2.r&&dp.parent!==d2&&d2.parent!==dp&&!d2.killed){
+            const dx=d2.x-dp.x,dy=d2.y-dp.y,dist=Math.sqrt(dx*dx+dy*dy);
+            if(dist<(dp.r+d2.r)*(o.collisionRadius+(dp.momentum*o.collisionRadiusIncrease*ts))){
+              dp.r=Math.min(o.maxR,Math.sqrt((Math.PI*dp.r*dp.r+Math.PI*d2.r*d2.r*0.8)/Math.PI));
+              dp.momentumX+=dx*0.1; dp.spreadX=0; dp.spreadY=0; d2.killed=true;
+              dp.momentum=Math.max(d2.momentum,Math.min(40,dp.momentum+(dp.r*o.collisionBoostMultiplier)+o.collisionBoost));
+            }
+          }
+        });
+      }
+      dp.isNew=false;
+      dp.momentum-=Math.max(1,(o.minR*0.5)-dp.momentum)*0.1*ts;
+      if(dp.momentum<0)dp.momentum=0;
+      dp.momentumX*=Math.pow(0.7,ts);
+
+      if(!dp.killed){
+        nd.push(dp);
+        if(moved&&o.dropletsRate>0){dlx.globalCompositeOperation='destination-out';dlx.drawImage(clr,(dp.x-dp.r*o.dropletsCleaningRadiusMultiplier)*sc,(dp.y-dp.r*o.dropletsCleaningRadiusMultiplier)*sc,(dp.r*2*o.dropletsCleaningRadiusMultiplier)*sc,(dp.r*2*o.dropletsCleaningRadiusMultiplier)*sc*1.5);}
+        ddrop(cx,dp);
+      }
+    });
+    drops=nd;
+    requestAnimationFrame(tick);
+  }
+  tick();
+  return cv;
+}
+
+// Shared image cache for drop textures
+let _dropAlpha=null, _dropColor=null, _dropLoaded=false, _dropQueue=[];
+function loadDropTextures(cb){
+  if(_dropLoaded){cb(_dropAlpha,_dropColor);return;}
+  _dropQueue.push(cb);
+  if(_dropQueue.length>1)return;
+  const a=new Image(), c=new Image();
+  let n=0;
+  function done(){if(++n<2)return;_dropAlpha=a;_dropColor=c;_dropLoaded=true;_dropQueue.forEach(fn=>fn(a,c));_dropQueue=[];}
+  a.onload=done; c.onload=done;
+  a.src='/img/drop-alpha.png'; c.src='/img/drop-color.png';
+}
+
+function spawnRainOverlay(targetEl, intensity, opts){
+  loadDropTextures((aI,cI)=>{
+    const w=targetEl.clientWidth, h=targetEl.clientHeight;
+    if(w<50||h<50)return;
+    const dpr=Math.min(window.devicePixelRatio, opts.maxDpr||1.5);
+    const cv=RaindropsEngine(w*dpr,h*dpr,dpr,aI,cI,{
+      minR: opts.minR || 10,
+      maxR: opts.maxR || 35,
+      maxDrops: opts.maxDrops || 500,
+      rainChance: opts.rainChance || 0.2,
+      rainLimit: opts.rainLimit || 3,
+      dropletsRate: opts.dropletsRate || 30,
+      dropletsSize: opts.dropletsSize || [2,4],
+      dropletsCleaningRadiusMultiplier: 0.28,
+      raining:true,
+      globalTimeScale: opts.globalTimeScale || 1,
+      trailRate: opts.trailRate || 1,
+      autoShrink:true,
+      spawnArea:[-0.1,0.95],
+      trailScaleRange:[0.2,0.45],
+      collisionRadius:0.45, collisionRadiusIncrease:0.01,
+      dropFallMultiplier:1, collisionBoostMultiplier:0.05, collisionBoost:1,
+    });
+    cv.style.cssText = opts.style || '';
+    if(getComputedStyle(targetEl).position==='static') targetEl.style.position='relative';
+    targetEl.appendChild(cv);
+  });
+}
+
+function initLensRain(container, weatherCode, precip, windSpeed) {
+  if (document.documentElement.getAttribute('data-fx') === 'off') return;
+  if (!isRainCode(weatherCode) && !isSnowCode(weatherCode)) return;
+  const intensity = precipIntensity(weatherCode, precip);
+  if (intensity < 0.05) return;
+
+  // Hero overlay — full intensity
+  const hero = container.closest('.aw-hero') || container.parentElement;
+  spawnRainOverlay(hero, intensity, {
+    minR: 8+(1-intensity)*5, maxR: 25+intensity*20,
+    maxDrops: 300+Math.floor(intensity*500),
+    rainChance: 0.12+intensity*0.25, rainLimit: 2+Math.floor(intensity*3),
+    dropletsRate: 15+intensity*40,
+    globalTimeScale: 0.8+intensity*0.4,
+    trailRate: 0.5+intensity*1.5,
+    style: 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;mix-blend-mode:screen;opacity:0.45;border-radius:var(--w-radius);filter:saturate(0.15) brightness(1.4)',
+  });
+
+  // Full page background overlay — sparser, more subtle
+  const body = document.body;
+  spawnRainOverlay(body, intensity, {
+    minR: 6, maxR: 18+intensity*10,
+    maxDrops: 150+Math.floor(intensity*200),
+    rainChance: 0.06+intensity*0.1, rainLimit: 1+Math.floor(intensity*2),
+    dropletsRate: 8+intensity*15,
+    dropletsSize: [1,3],
+    globalTimeScale: 0.6+intensity*0.3,
+    trailRate: 0.3+intensity*0.8,
+    maxDpr: 1, // lower res for performance on full page
+    style: 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;mix-blend-mode:multiply;opacity:0.35;filter:saturate(0.1) brightness(0.9)',
+  });
+}
+
+function animateLensRain(){} // no-op, RaindropsEngine self-animates
+
+// ─── Shared setup for sky, sun, fog, weather ────────────────
+function setupWeatherScene(scene, renderer, water, skyObj, weather, isHero) {
+  const skyU = skyObj.material.uniforms;
+  const sun = new THREE.Vector3();
+
+  // Base sky values
+  let turbidity = 4;
+  let rayleigh = 2;
+  let mieCoeff = 0.005;
+  let mieG = 0.8;
+
+  // Sun position
+  const now = new Date();
+  const hours = now.getHours() + now.getMinutes() / 60;
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(),0,0)) / 86400000);
+  const seasonalMax = 15 + 40 * Math.sin((dayOfYear - 80) / 365 * Math.PI * 2);
+  const solarNoon = 13;
+  const hourAngle = (hours - solarNoon) / 12 * Math.PI;
+  const elevation = Math.max(-5, seasonalMax * Math.cos(hourAngle));
+  const azimuth = 180 + (hours - solarNoon) * 15;
+
+  const sunPhi = THREE.MathUtils.degToRad(90 - elevation);
+  const sunTheta = THREE.MathUtils.degToRad(azimuth);
+  sun.setFromSphericalCoords(1, sunPhi, sunTheta);
+  skyU['sunPosition'].value.copy(sun);
+  water.material.uniforms['sunDirection'].value.copy(sun).normalize();
+
+  // Cloud cover effects
+  const cloud = (weather.cloud_cover ?? 0) / 100; // 0-1
+  turbidity += cloud * 6;        // overcast = hazy sky
+  rayleigh = Math.max(0.3, rayleigh - cloud * 1.5); // less blue scatter
+  mieCoeff += cloud * 0.015;     // more atmospheric scattering
+
+  // Time-of-day adjustments
+  const isNight = elevation < -2;
+  const isDusk = elevation >= -2 && elevation < 8;
+  let baseExposure;
+
+  if (isNight) {
+    rayleigh = 0.2;
+    turbidity = 1 + cloud * 2;
+    baseExposure = 0.3;
+    water.material.uniforms['sunColor'].value.setHex(0x8899cc);
+    scene.add(new THREE.AmbientLight(0x334466, 1.2));
+    scene.add(new THREE.DirectionalLight(0x667799, 0.4));
+  } else if (isDusk) {
+    rayleigh = Math.max(0.5, 1 - cloud * 0.5);
+    turbidity = 8 + cloud * 3;
+    mieCoeff = 0.02 + cloud * 0.01;
+    baseExposure = 0.3;
+    scene.add(new THREE.AmbientLight(0x403030, 0.4));
+  } else {
+    const elFactor = elevation / Math.max(seasonalMax, 1);
+    baseExposure = (isHero ? 0.4 : 0.45) + elFactor * 0.15;
+    // Cloud dimming: up to 40% exposure reduction at full overcast
+    baseExposure *= (1 - cloud * 0.4);
+    scene.add(new THREE.AmbientLight(0x404060, 0.3));
+  }
+
+  skyU['turbidity'].value = turbidity;
+  skyU['rayleigh'].value = rayleigh;
+  skyU['mieCoefficient'].value = mieCoeff;
+  skyU['mieDirectionalG'].value = mieG;
+  renderer.toneMappingExposure = baseExposure;
+
+  // ─── Fog from visibility + cloud cover ─────────────────
+  const visibility = weather.visibility ?? 50000; // meters, default clear
+  // Convert visibility to fog density: 10km = light, 1km = thick, <500m = pea soup
+  const visFogDensity = visibility < 50000 ? Math.max(0, 0.0008 * (1 - visibility / 50000)) : 0;
+  // Cloud-based fog (overcast + low cloud = misty) — much denser at full overcast
+  const cloudFog = cloud > 0.5 ? (cloud - 0.5) * 0.003 : 0;
+  // Precipitation adds fog too
+  const precipFog = precipIntensity(weather.weather_code, weather.precipitation) * 0.0006;
+  // Wind-driven spray haze for stormy seas
+  const windHaze = (weather.wind_speed_10m ?? 0) > 20 ? ((weather.wind_speed_10m - 20) / 30) * 0.0005 : 0;
+  const totalFog = Math.max(visFogDensity, cloudFog) + precipFog + windHaze;
+
+  if (totalFog > 0.00005) {
+    const fogColor = isNight ? 0x1a2233 : isDusk ? 0x4a3a3a : 0x8899aa;
+    scene.fog = new THREE.FogExp2(fogColor, totalFog);
+    water.material.fog = true;
+  }
+
+  return { elevation, isNight, isDusk };
+}
+
+// ─── Hero Ocean ─────────────────────────────────────────────
+function initHeroOcean(data) {
+  if (document.documentElement.getAttribute('data-fx') === 'off') return;
+  const marine = data.marine || {};
+  const weather = data.weather || {};
+  const container = document.getElementById('hero-ocean');
+  if (!container) return;
+
+  if (_hRenderer) {
+    _hAlive = false;
+    _hRenderer.dispose();
+    _hRenderer.domElement.remove();
+  }
+
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (w < 100 || h < 50) return;
+
+  _hRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  _hRenderer.setSize(w, h);
+  _hRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  _hRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  container.appendChild(_hRenderer.domElement);
+
+  _hScene = new THREE.Scene();
+  _hCamera = new THREE.PerspectiveCamera(55, w / h, 1, 20000);
+
+  const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+  const waterNormals = new THREE.TextureLoader().load(
+    'https://threejs.org/examples/textures/waternormals.jpg',
+    function(tex) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; }
+  );
+
+  const waveHeight = marine.wave_height ?? 1;
+  const wavePeriod = marine.wave_period ?? 5;
+  const seaTemp = marine.sea_surface_temperature ?? 10;
+  const windSpeed = weather.wind_speed_10m ?? 10;
+  const windGusts = weather.wind_gusts_10m ?? windSpeed;
+  const windDir = weather.wind_direction_10m ?? 270;
+
+  // Camera from shore — elevated like standing on the esplanade
+  // Higher up looking down at the water, rougher seas = slightly lower for drama
+  const hCamBase = Math.max(20, 35 - waveHeight * 4);
+  _hCamera.position.set(0, hCamBase, 80);
+  _hCamera.lookAt(0, -5, -40);
+
+  // Wind adds chop — much more aggressive for storms
+  const windChop = Math.min(windSpeed / 20, 1.5) * 8;
+  const gustFactor = windGusts > windSpeed ? (windGusts - windSpeed) / 15 : 0;
+
+  // Stormy water gets darker, greyer-green
+  const storminess = Math.min(1, windSpeed / 35 + waveHeight / 4);
+  let waterCol = tempToColor(seaTemp);
+  if (storminess > 0.3) {
+    const r = ((waterCol >> 16) & 0xff), g = ((waterCol >> 8) & 0xff), b = (waterCol & 0xff);
+    const mix = (storminess - 0.3) / 0.7;
+    waterCol = (Math.floor(r * (1 - mix * 0.5)) << 16) | (Math.floor(g * (1 - mix * 0.3)) << 8) | Math.floor(b * (1 - mix * 0.4));
+  }
+
+  _hWater = new Water(waterGeometry, {
+    textureWidth: 256,
+    textureHeight: 256,
+    waterNormals: waterNormals,
+    sunDirection: new THREE.Vector3(0.7, 0.5, 0.5).normalize(),
+    sunColor: 0xfff5e6,
+    waterColor: waterCol,
+    distortionScale: Math.max(0.5, Math.min(waveHeight * 14 + windChop, 55)),
+    fog: true,
+    alpha: 1.0,
+  });
+  _hWater.material.uniforms['size'].value = Math.max(1, Math.min(40 / wavePeriod, 12));
+  _hWater.rotation.x = -Math.PI / 2;
+  _hScene.add(_hWater);
+
+  const sky = new Sky();
+  sky.scale.setScalar(10000);
+  _hScene.add(sky);
+
+  setupWeatherScene(_hScene, _hRenderer, _hWater, sky, weather, true);
+
+  // Precipitation
+  const hPrecip = createPrecipitation(_hScene, weather.weather_code, weather.precipitation,
+    windSpeed, windDir, { width: 200, height: 80, depth: 200 });
+
+  // Rain on lens — attach to the hero wrapper so it overlays everything
+  const heroWrap = container.closest('.aw-hero') || container.parentElement;
+  initLensRain(heroWrap, weather.weather_code, weather.precipitation, windSpeed, windDir);
+
+  let hTime = 0;
+  const baseSpeed = Math.max(0.3, 1.5 / wavePeriod);
+  const windSpeedBoost = Math.min(windSpeed / 25, 0.8);
+  const speed = baseSpeed + windSpeedBoost;
+
+  // Wind-driven camera sway — dramatic in storms
+  const swayAmp = 10 + Math.min(windSpeed / 3, 25);
+  const swayY = 3 + Math.min(windSpeed / 5, 10);
+
+  // Wind direction drives wave travel
+  // Ayr faces west toward Arran — camera looks ~west (negative Z)
+  // Wind from south (180°) = waves moving left to right across view
+  const windRad = ((windDir + 180) * Math.PI) / 180;
+  const driftSpeed = windSpeed * 0.03;
+
+  _hAlive = true;
+
+  function animateHero() {
+    if (!_hAlive) return;
+    requestAnimationFrame(animateHero);
+    if (document.hidden) return;
+    hTime += 0.016;
+    _hWater.material.uniforms['time'].value = hTime * speed;
+
+    // Wind-direction wave drift — shift water plane with wind
+    _hWater.position.x += Math.sin(windRad) * driftSpeed * 0.016;
+    _hWater.position.z += Math.cos(windRad) * driftSpeed * 0.016;
+    _hWater.position.x = _hWater.position.x % 100;
+    _hWater.position.z = _hWater.position.z % 100;
+
+    // Gust pulses — irregular violent sway
+    const gustPulse = gustFactor > 0
+      ? (Math.sin(hTime * 0.5) + Math.sin(hTime * 1.3) * 0.5) * gustFactor * 5
+      : 0;
+    _hCamera.position.x = Math.sin(hTime * 0.06) * swayAmp + gustPulse;
+    _hCamera.position.y = hCamBase + Math.sin(hTime * 0.1) * swayY + Math.sin(hTime * 0.25) * waveHeight * 1.5;
+    _hCamera.lookAt(0, -5, -40);
+
+    animatePrecipitation(hPrecip, 0.016);
+    animateLensRain(0.016);
+    _hRenderer.render(_hScene, _hCamera);
+  }
+  animateHero();
+
+  const ro = new ResizeObserver(() => {
+    if (!_hAlive) return;
+    const nw = container.clientWidth;
+    const nh = container.clientHeight;
+    _hCamera.aspect = nw / nh;
+    _hCamera.updateProjectionMatrix();
+    _hRenderer.setSize(nw, nh);
+  });
+  ro.observe(container);
+}
+
+window.addEventListener('beforeunload', () => {
+  _hAlive = false;
+  if (_hRenderer) _hRenderer.dispose();
+});
+
+// ─── Effects toggle ──────────────────────────────────────────
+let _lastOceanData = null;
+
+window._pauseEffects = function() {
+  // Stop Three.js animations
+  _hAlive = false;
+  _alive = false;
+
+  // Hide hero ocean canvas
+  const heroCanvas = document.getElementById('hero-ocean');
+  if (heroCanvas) heroCanvas.style.display = 'none';
+
+  // Hide main ocean canvas
+  const oceanCanvas = document.getElementById('ocean-container');
+  if (oceanCanvas) {
+    const c = oceanCanvas.querySelector('canvas');
+    if (c) c.style.display = 'none';
+  }
+
+  // Remove all rain overlay canvases (lens rain on hero + body)
+  document.querySelectorAll('canvas').forEach(c => {
+    const s = c.style.cssText || '';
+    if (s.includes('mix-blend-mode') || s.includes('pointer-events:none')) {
+      c.dataset.fxPaused = '1';
+      c.style.display = 'none';
+    }
+  });
+};
+
+window._resumeEffects = function() {
+  // Show hero ocean canvas
+  const heroCanvas = document.getElementById('hero-ocean');
+  if (heroCanvas) heroCanvas.style.display = '';
+
+  // Show main ocean canvas
+  const oceanCanvas = document.getElementById('ocean-container');
+  if (oceanCanvas) {
+    const c = oceanCanvas.querySelector('canvas');
+    if (c) c.style.display = '';
+  }
+
+  // Show rain overlays
+  document.querySelectorAll('canvas[data-fx-paused]').forEach(c => {
+    c.style.display = '';
+    delete c.dataset.fxPaused;
+  });
+
+  // Re-init Three.js scenes with last data
+  if (_lastOceanData) {
+    initHeroOcean(_lastOceanData);
+    _alive = false;
+    if (_renderer) {
+      cancelAnimationFrame(_animId);
+      _renderer.dispose();
+      _renderer.domElement.remove();
+    }
+    window.initOceanVis(_lastOceanData);
+  }
+};
+
+// ─── Main Ocean (Firth of Clyde section) ────────────────────
+window.initOceanVis = function(data) {
+  if (!data) return;
+  _lastOceanData = data;
+
+  // Skip if effects are off
+  if (document.documentElement.getAttribute('data-fx') === 'off') return;
+
+  initHeroOcean(data);
+
+  const marine = data.marine || {};
+  const weather = data.weather || {};
+  const container = document.getElementById('ocean-container');
+  if (!container) return;
+
+  if (_renderer) {
+    cancelAnimationFrame(_animId);
+    _renderer.dispose();
+    _renderer.domElement.remove();
+    _alive = false;
+  }
+
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (w < 100 || h < 50) return;
+
+  _renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  _renderer.setSize(w, h);
+  _renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  _renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  container.insertBefore(_renderer.domElement, container.firstChild);
+
+  _scene = new THREE.Scene();
+  _camera = new THREE.PerspectiveCamera(55, w / h, 1, 20000);
+
+  const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+  const waterNormals = new THREE.TextureLoader().load(
+    'https://threejs.org/examples/textures/waternormals.jpg',
+    function(tex) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; }
+  );
+
+  const waveHeight = marine.wave_height ?? 1;
+  const wavePeriod = marine.wave_period ?? 5;
+  const seaTemp = marine.sea_surface_temperature ?? 10;
+  const windSpeed = weather.wind_speed_10m ?? 10;
+  const windGusts = weather.wind_gusts_10m ?? windSpeed;
+  const windDir = weather.wind_direction_10m ?? 270;
+
+  // Camera drops closer to water in rough seas
+  // Shore view — elevated, looking down at the water
+  const camBase = Math.max(10, 18 - waveHeight * 2);
+  _camera.position.set(0, camBase, 45);
+  _camera.lookAt(0, -5, -30);
+
+  const windChop = Math.min(windSpeed / 20, 1.5) * 8;
+  const gustFactor = windGusts > windSpeed ? (windGusts - windSpeed) / 15 : 0;
+
+  // Stormy water colour
+  const storminess = Math.min(1, windSpeed / 35 + waveHeight / 4);
+  let waterCol = tempToColor(seaTemp);
+  if (storminess > 0.3) {
+    const r = ((waterCol >> 16) & 0xff), g = ((waterCol >> 8) & 0xff), b = (waterCol & 0xff);
+    const mix = (storminess - 0.3) / 0.7;
+    waterCol = (Math.floor(r * (1 - mix * 0.5)) << 16) | (Math.floor(g * (1 - mix * 0.3)) << 8) | Math.floor(b * (1 - mix * 0.4));
+  }
+
+  _water = new Water(waterGeometry, {
+    textureWidth: 256,
+    textureHeight: 256,
+    waterNormals: waterNormals,
+    sunDirection: new THREE.Vector3(0.7, 0.5, 0.5).normalize(),
+    sunColor: 0xfff5e6,
+    waterColor: waterCol,
+    distortionScale: Math.max(0.5, Math.min(waveHeight * 14 + windChop, 55)),
+    fog: true,
+    alpha: 1.0,
+  });
+  _water.material.uniforms['size'].value = Math.max(1, Math.min(40 / wavePeriod, 12));
+  _water.rotation.x = -Math.PI / 2;
+  _scene.add(_water);
+
+  const sky = new Sky();
+  sky.scale.setScalar(10000);
+  _scene.add(sky);
+
+  setupWeatherScene(_scene, _renderer, _water, sky, weather, false);
+
+  // Precipitation particles
+  const precipObj = createPrecipitation(_scene, weather.weather_code, weather.precipitation,
+    windSpeed, windDir, { width: 150, height: 60, depth: 120 });
+
+  let time = 0;
+  const baseSpeed = Math.max(0.3, 1.5 / wavePeriod);
+  const windSpeedBoost = Math.min(windSpeed / 25, 0.8);
+  const speed = baseSpeed + windSpeedBoost;
+
+  const swayAmp = 8 + Math.min(windSpeed / 3, 20);
+  const swayY = 2 + Math.min(windSpeed / 5, 8);
+
+  // Wind direction wave drift
+  const windRad = ((windDir + 180) * Math.PI) / 180;
+  const driftSpeed = windSpeed * 0.03;
+
+  _alive = true;
+
+  function animate() {
+    if (!_alive) return;
+    _animId = requestAnimationFrame(animate);
+    if (document.hidden) return;
+
+    time += 0.016;
+    _water.material.uniforms['time'].value = time * speed;
+
+    // Wind-direction wave drift
+    _water.position.x += Math.sin(windRad) * driftSpeed * 0.016;
+    _water.position.z += Math.cos(windRad) * driftSpeed * 0.016;
+    _water.position.x = _water.position.x % 100;
+    _water.position.z = _water.position.z % 100;
+
+    const gustPulse = gustFactor > 0
+      ? (Math.sin(time * 0.5) + Math.sin(time * 1.3) * 0.5) * gustFactor * 4
+      : 0;
+    _camera.position.x = Math.sin(time * 0.08) * swayAmp + gustPulse;
+    _camera.position.y = camBase + Math.sin(time * 0.15) * swayY + Math.sin(time * 0.25) * waveHeight * 1;
+    _camera.lookAt(0, -5, -30);
+
+    animatePrecipitation(precipObj, 0.016);
+    _renderer.render(_scene, _camera);
+  }
+
+  animate();
+
+  const ro = new ResizeObserver(() => {
+    if (!_alive) return;
+    const nw = container.clientWidth;
+    const nh = container.clientHeight;
+    _camera.aspect = nw / nh;
+    _camera.updateProjectionMatrix();
+    _renderer.setSize(nw, nh);
+  });
+  ro.observe(container);
+};
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  _alive = false;
+  if (_renderer) _renderer.dispose();
+});
+
+// ─── Lightning Detection ────────────────────────────────────
+let lightningMap = null;
+async function checkLightning() {
+  try {
+    const d = await fetch("/api/lightning").then(r => r.json());
+    const tab = document.getElementById("lightning-tab");
+    const info = document.getElementById("lightning-info");
+    const mapDiv = document.getElementById("lightning-map");
+    if (d.strikes_last_hour > 0 || d.strikes_last_24h > 0) {
+      tab.style.display = "inline-flex";
+      info.innerHTML = "<b style=color:#ef4444>" + d.strikes_last_hour + " strikes in last hour</b>, " + d.strikes_last_24h + " in last 24h";
+      // Load strikes and show map
+      const strikes = await fetch("/api/lightning/strikes?hours=1").then(r => r.json());
+      if (strikes.length > 0) {
+        mapDiv.style.display = "block";
+        if (!lightningMap) {
+          lightningMap = L.map("lightning-map").setView([55.46, -4.63], 9);
+          L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {maxZoom: 18}).addTo(lightningMap);
+        }
+        // Clear and add strike markers
+        lightningMap.eachLayer(l => { if (l instanceof L.CircleMarker) lightningMap.removeLayer(l); });
+        strikes.forEach(s => {
+          L.circleMarker([s.lat, s.lon], {radius: 5, color: "#fbbf24", fillColor: "#fbbf24", fillOpacity: 0.8, weight: 1})
+            .bindTooltip("Strike: " + (s.amplitude || "?") + " kA").addTo(lightningMap);
+        });
+      }
+    } else {
+      tab.style.display = "none";
+      info.innerHTML = "No lightning detected in the last 24 hours.";
+      mapDiv.style.display = "none";
+    }
+  } catch (e) { console.debug("Lightning check error", e); }
+}
+// Check on tab click and periodically
+document.querySelectorAll(".aw-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    if (tab.dataset.tab === "lightning") { setTimeout(checkLightning, 100); if (lightningMap) setTimeout(() => lightningMap.invalidateSize(), 200); }
+  });
+});
+checkLightning();
+setInterval(checkLightning, 60000);
+</script>
+</body>
+</html>

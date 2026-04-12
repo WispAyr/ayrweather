@@ -1,0 +1,479 @@
+"""
+AyrWeather - Detailed weather app for Ayrshire, Scotland
+FastAPI backend — thin proxy to Siphon data ingestion service
+"""
+
+import asyncio
+import httpx
+import logging
+from datetime import datetime, timezone
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+import uvicorn
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="AyrWeather", version="2.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
+
+# Siphon data ingestion service (primary on big-server, fallback on pu2)
+SIPHON_URL = "http://142.202.191.208:3882"
+NURO_URL = "http://192.168.195.33:3960"
+PRISM_URL = "http://127.0.0.1:3887"
+
+LOCATIONS = {
+    "ayr":         {"name": "Ayr",         "lat": 55.4583, "lon": -4.6292},
+    "troon":       {"name": "Troon",       "lat": 55.5369, "lon": -4.6561},
+    "prestwick":   {"name": "Prestwick",   "lat": 55.4961, "lon": -4.6148},
+    "kilmarnock":  {"name": "Kilmarnock",  "lat": 55.6111, "lon": -4.4961},
+    "irvine":      {"name": "Irvine",      "lat": 55.6110, "lon": -4.6669},
+    "largs":       {"name": "Largs",       "lat": 55.7948, "lon": -4.8695},
+    "maybole":     {"name": "Maybole",     "lat": 55.3556, "lon": -4.6844},
+    "girvan":      {"name": "Girvan",      "lat": 55.2347, "lon": -4.8592},
+    "cumnock":     {"name": "Cumnock",     "lat": 55.4542, "lon": -4.2697},
+}
+
+
+# ── Siphon proxy helper ─────────────────────────────────────────────────
+
+async def siphon_get(path: str) -> dict | None:
+    """Fetch from Siphon with timeout. Returns None on failure."""
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(f"{SIPHON_URL}{path}")
+            if r.status_code == 200:
+                return r.json()
+            logger.warning(f"Siphon {path} returned {r.status_code}")
+    except Exception as e:
+        logger.warning(f"Siphon {path} error: {e}")
+    return None
+
+
+async def prism_get(path: str) -> dict | None:
+    """Fetch from Prism (local) with timeout. Returns None on failure."""
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.get(f"{PRISM_URL}{path}")
+            if r.status_code == 200:
+                return r.json()
+    except Exception as e:
+        logger.warning(f"Prism {path} error: {e}")
+    return None
+
+
+@app.get("/api/local-sensors/{region}")
+async def local_sensors(region: str):
+    """Live regional sensor signals from Prism (METAR bbox + SEPA rainfall + cross-verified intelligence)."""
+    import asyncio
+    mw, pg, rg, wc, wa, sw, ru, sd, vc, sq, fb, av, rn = await asyncio.gather(
+        prism_get(f"/api/micro-wind/{region}"),
+        prism_get(f"/api/pressure-gradient/{region}"),
+        prism_get(f"/api/rain-gradient/{region}"),
+        prism_get(f"/api/wind-consensus/{region}"),
+        prism_get(f"/api/wind-aloft/{region}"),
+        prism_get(f"/api/storm-watch/{region}"),
+        prism_get(f"/api/runways-in-use/{region}"),
+        prism_get(f"/api/sar-drift/{region}"),
+        prism_get(f"/api/vis-corroboration/{region}"),
+        prism_get(f"/api/source-quality/{region}"),
+        prism_get(f"/api/frontal-boundary"),
+        siphon_get(f"/api/stations/aviation/{region}"),
+        siphon_get(f"/api/stations/rainfall/{region}"),
+    )
+    av_stations = (av or {}).get("data", {}).get("stations", []) if av else []
+    rn_stations = (rn or {}).get("data", {}).get("stations", []) if rn else []
+    return JSONResponse({
+        "region": region,
+        "signals": {
+            "micro_wind": (mw or {}).get("data"),
+            "pressure_gradient": (pg or {}).get("data"),
+            "rain_gradient": (rg or {}).get("data"),
+            "wind_consensus": (wc or {}).get("data"),
+            "wind_aloft": (wa or {}).get("data"),
+            "storm_watch": (sw or {}).get("data"),
+            "runways_in_use": (ru or {}).get("data"),
+            "sar_drift": (sd or {}).get("data"),
+            "vis_corroboration": (vc or {}).get("data"),
+            "source_quality": (sq or {}).get("data"),
+            "frontal_boundary": (fb or {}).get("data"),
+        },
+        "stations": {
+            "aviation": av_stations,
+            "aviation_count": len(av_stations),
+            "rainfall_count": len(rn_stations),
+        },
+        "computed_at": {
+            "micro_wind": (mw or {}).get("computed_at"),
+            "pressure_gradient": (pg or {}).get("computed_at"),
+            "rain_gradient": (rg or {}).get("computed_at"),
+            "wind_consensus": (wc or {}).get("computed_at"),
+            "wind_aloft": (wa or {}).get("computed_at"),
+            "storm_watch": (sw or {}).get("computed_at"),
+            "runways_in_use": (ru or {}).get("computed_at"),
+        },
+    })
+
+
+# ── Weather API (proxied from Siphon) ────────────────────────────────────
+
+@app.get("/api/weather/{location_key}")
+async def get_weather(location_key: str):
+    if location_key not in LOCATIONS:
+        raise HTTPException(status_code=404, detail=f"Location '{location_key}' not found")
+
+    data = await siphon_get(f"/api/weather/{location_key}")
+    if data:
+        return JSONResponse(data)
+
+    # Siphon unreachable — return empty shell so frontend doesn't break
+    return JSONResponse({
+        "location": LOCATIONS[location_key],
+        "forecast": None,
+        "marine": None,
+        "air_quality": None,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "_siphon_error": True,
+    })
+
+
+@app.get("/api/warnings")
+async def get_warnings():
+    data = await siphon_get("/api/warnings")
+    if data:
+        return JSONResponse(data)
+    return JSONResponse({
+        "warnings": [],
+        "region": "Strathclyde",
+        "source": "Met Office",
+        "fetched_at": None,
+    })
+
+
+@app.get("/api/grid/outages/scotland")
+async def get_grid_outages_scotland():
+    data = await siphon_get("/api/grid/outages/scotland")
+    if data:
+        return JSONResponse(data)
+    return JSONResponse({"total_active": 0, "ssen": {"active": 0}, "spen": {"available": False}})
+
+
+@app.get("/api/locations")
+async def get_locations():
+    return JSONResponse(LOCATIONS)
+
+
+# ── Nuro integration (proxied from Siphon) ───────────────────────────────
+
+@app.get("/api/nuro")
+async def nuro():
+    """Proxy to Siphon's nuro endpoint."""
+    data = await siphon_get("/api/nuro")
+    if data:
+        # Override label to still appear as AyrWeather in Nuro
+        data["label"] = "AyrWeather"
+        data["icon"] = "\U0001f324\ufe0f"
+        return JSONResponse(data)
+    return JSONResponse({
+        "version": "2.0",
+        "label": "AyrWeather",
+        "icon": "\U0001f324\ufe0f",
+        "streams": [],
+        "alerts": [],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+
+# ── Prism intelligence lenses (proxied) ──────────────────────────────────
+
+@app.get("/api/prism/intelligence/{location}")
+async def prism_intelligence(location: str):
+    data = await prism_get(f"/api/intelligence/{location}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/catchment")
+async def prism_catchment():
+    data = await prism_get("/api/catchment-response")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/storm-river")
+async def prism_storm_river():
+    data = await prism_get("/api/storm-river-forecast")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/storm-tracker")
+async def prism_storm_tracker():
+    data = await prism_get("/api/storm-tracker")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/ayrshire-situation")
+async def prism_ayrshire_situation():
+    data = await prism_get("/api/ayrshire-situation")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/grid-pulse")
+async def prism_grid_pulse():
+    data = await prism_get("/api/grid-pulse")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/outdoor-score/{location}")
+async def prism_outdoor_score(location: str):
+    data = await prism_get(f"/api/outdoor-score/{location}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/gnss-quality")
+async def prism_gnss_quality():
+    data = await prism_get("/api/gnss-quality")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/wave-analysis")
+async def prism_wave_analysis():
+    data = await prism_get("/api/wave-analysis")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/flood-risk")
+async def prism_flood_risk():
+    data = await prism_get("/api/flood-risk")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/storm-forecast/{location}")
+async def prism_storm_forecast(location: str):
+    data = await prism_get(f"/api/storm-forecast/{location}")
+    return JSONResponse(data or {})
+
+
+# ── New cross-verification lenses (proxied from Prism) ───────────────────
+
+@app.get("/api/prism/wind-consensus/{region}")
+async def prism_wind_consensus(region: str):
+    data = await prism_get(f"/api/wind-consensus/{region}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/wind-aloft/{region}")
+async def prism_wind_aloft(region: str):
+    data = await prism_get(f"/api/wind-aloft/{region}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/storm-watch/{region}")
+async def prism_storm_watch(region: str):
+    data = await prism_get(f"/api/storm-watch/{region}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/source-quality/{region}")
+async def prism_source_quality(region: str):
+    data = await prism_get(f"/api/source-quality/{region}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/frontal-boundary")
+async def prism_frontal_boundary():
+    data = await prism_get("/api/frontal-boundary")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/runways-in-use/{region}")
+async def prism_runways_in_use(region: str):
+    data = await prism_get(f"/api/runways-in-use/{region}")
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/sar-drift/{region}")
+async def prism_sar_drift(region: str, lat: float | None = None, lon: float | None = None, hours: float = 6, obj: str = "PIW"):
+    qs = []
+    if lat is not None: qs.append(f"lat={lat}")
+    if lon is not None: qs.append(f"lon={lon}")
+    qs.append(f"hours={hours}")
+    qs.append(f"obj={obj}")
+    data = await prism_get(f"/api/sar-drift/{region}?" + "&".join(qs))
+    return JSONResponse(data or {})
+
+@app.get("/api/prism/vis-corroboration/{region}")
+async def prism_vis_corroboration(region: str):
+    data = await prism_get(f"/api/vis-corroboration/{region}")
+    return JSONResponse(data or {})
+
+
+# ── New data sources (proxied from Siphon) ───────────────────────────────
+
+@app.get("/api/rivers")
+async def get_rivers():
+    data = await siphon_get("/api/rivers")
+    return JSONResponse(data or {"rivers": {}, "count": 0})
+
+
+@app.get("/api/moon")
+async def get_moon():
+    data = await siphon_get("/api/moon")
+    return JSONResponse(data or {"phase_name": "Unknown", "illumination": 0, "emoji": ""})
+
+
+@app.get("/api/aurora")
+async def get_aurora():
+    data = await siphon_get("/api/aurora")
+    return JSONResponse(data or {"status": "unknown", "description": "Unavailable"})
+
+
+@app.get("/api/iss")
+async def get_iss():
+    data = await siphon_get("/api/iss")
+    return JSONResponse(data or {"latitude": 0, "longitude": 0})
+
+
+@app.get("/api/floods")
+async def get_floods():
+    data = await siphon_get("/api/floods")
+    return JSONResponse(data or {"total_warnings": 0, "items": []})
+
+
+@app.get("/api/uv")
+async def get_uv():
+    data = await siphon_get("/api/uv")
+    return JSONResponse(data or {"current_uv": None, "max_today": None, "level": "Unknown"})
+
+
+@app.get("/api/fuel")
+async def get_fuel():
+    data = await siphon_get("/api/fuel")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/news")
+async def get_news():
+    data = await siphon_get("/api/news")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/news/{region}")
+async def get_news_region(region: str):
+    data = await siphon_get(f"/api/news/{region}")
+    return JSONResponse(data or {"articles": [], "count": 0})
+
+
+@app.get("/api/aviation")
+async def get_aviation():
+    data = await siphon_get("/api/aviation")
+    return JSONResponse(data or {"count": 0, "aircraft": []})
+
+
+@app.get("/api/space")
+async def get_space():
+    data = await siphon_get("/api/space")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/space/{group}")
+async def get_space_group(group: str):
+    data = await siphon_get(f"/api/space/{group}")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/finance/fx")
+async def get_fx():
+    data = await siphon_get("/api/finance/fx")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/transport/incidents")
+async def get_transport_incidents():
+    data = await siphon_get("/api/transport/incidents")
+    return JSONResponse(data or {"count": 0, "incidents": []})
+
+
+@app.get("/api/grid")
+async def get_grid():
+    data = await siphon_get("/api/grid")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/grid/regional")
+async def get_grid_regional():
+    data = await siphon_get("/api/grid/regional")
+    return JSONResponse(data or {"regions": [], "scotland": {}})
+
+
+# ── Lightning (proxied from Nuro hub) ────────────────────────────────────
+
+@app.get("/api/lightning")
+async def api_lightning_proxy():
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{NURO_URL}/api/lightning", timeout=5.0)
+            if r.status_code == 200:
+                return r.json()
+    except Exception as e:
+        logger.debug(f"Lightning proxy error: {e}")
+    return {"active": False, "strikes_last_hour": 0, "strikes_last_24h": 0}
+
+
+@app.get("/api/lightning/strikes")
+async def api_lightning_strikes_proxy(hours: int = 1):
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{NURO_URL}/api/lightning/strikes?hours={hours}", timeout=5.0)
+            if r.status_code == 200:
+                return r.json()
+    except Exception as e:
+        logger.debug(f"Lightning strikes proxy error: {e}")
+    return []
+
+
+# ── Siphon registry + Prism lenses (proxied for dashboards) ─────────────
+
+@app.get("/api/siphon/sources")
+async def get_siphon_sources():
+    data = await siphon_get("/api/sources")
+    return JSONResponse(data or [])
+
+
+@app.get("/api/siphon/health")
+async def get_siphon_health():
+    data = await siphon_get("/api/health")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/prism/lenses")
+async def get_prism_lenses():
+    data = await prism_get("/api/lenses")
+    return JSONResponse(data or {})
+
+
+@app.get("/api/prism/health")
+async def get_prism_health():
+    data = await prism_get("/api/health")
+    return JSONResponse(data or {})
+
+
+# ── Heartbeat ────────────────────────────────────────────────────────────
+
+async def send_heartbeat():
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{NURO_URL}/api/heartbeat",
+                    json={
+                        "service": "AyrWeather",
+                        "version": "2.0",
+                        "icon": "\U0001f324\ufe0f",
+                        "port": 3875,
+                        "endpoint": "http://192.168.195.33:3875/api/nuro",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+        except Exception:
+            pass
+        await asyncio.sleep(30)
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(send_heartbeat())
+    logger.info("AyrWeather v2.0 started — data via Siphon")
+
+
+# ── Static files ─────────────────────────────────────────────────────────
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=3875)
